@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  WHATSAPP
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  name         String?
+  passwordHash String?
+  accounts     SocialAccount[]
+  posts        Post[]
+}
+
+model SocialAccount {
+  id          String    @id @default(cuid())
+  userId      String
+  platform    Platform
+  externalId  String
+  handle      String
+  accessToken String
+  expiresAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform, externalId])
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  userId      String
+  text        String
+  mediaKeys   String[]
+  platforms   Platform[]
+  status      PostStatus @default(SCHEDULED)
+  scheduledAt DateTime
+  createdAt   DateTime   @default(now())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledAt])
+}
