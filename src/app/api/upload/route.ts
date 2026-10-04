@@ -5,15 +5,22 @@ import { z } from "zod";
 import { s3 } from "@/lib/s3";
 import { getUserId } from "@/lib/user";
 
-const schema = z.object({
-  filename: z.string().min(1).max(120),
-  contentType: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4"]),
-});
+const MB = 1024 * 1024;
 
-// Browser uploads straight to storage with the returned URL (PUT).
+const schema = z
+  .object({
+    filename: z.string().min(1).max(120),
+    contentType: z.enum(["image/jpeg", "image/png", "image/webp", "video/mp4"]),
+    size: z.number().int().positive(),
+  })
+  .refine((d) => d.size <= (d.contentType.startsWith("video/") ? 100 * MB : 10 * MB), { message: "File too large" });
+
+// Gives the browser a short-lived URL to upload one file straight to storage (PUT).
 export async function POST(req: NextRequest) {
   const body = schema.safeParse(await req.json());
-  if (!body.success) return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
+  if (!body.success) {
+    return NextResponse.json({ error: "Use a JPG, PNG, WebP (up to 10 MB) or MP4 (up to 100 MB)" }, { status: 400 });
+  }
   const userId = await getUserId();
   const safe = body.data.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const key = `${userId}/${Date.now()}-${safe}`;
