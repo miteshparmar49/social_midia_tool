@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
@@ -7,11 +7,15 @@ import { prisma } from "@/lib/prisma";
 
 const creds = z.object({ email: z.string().email(), password: z.string().min(8) });
 
+class NotVerified extends CredentialsSignin {
+  code = "not_verified";
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
-    Google, // reads AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET from .env
+    ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET ? [Google] : []),
     Credentials({
       credentials: { email: {}, password: {} },
       async authorize(raw) {
@@ -19,22 +23,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!p.success) return null;
         const user = await prisma.user.findUnique({ where: { email: p.data.email.toLowerCase() } });
         if (!user?.passwordHash) return null;
-        const ok = await bcrypt.compare(p.data.password, user.passwordHash);
-        return ok ? { id: user.id, email: user.email, name: user.name } : null;
+        if (!(await bcrypt.compare(p.data.password, user.passwordHash))) return null;
+        if (!user.emailVerified) throw new NotVerified(); // only after the password is correct
+        return { id: user.id, email: user.email, name: user.name };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user, account, profile }) {
       if (account?.provider === "google") {
-        // Google login: find or create our own user by verified email
         if (!profile?.email || !profile.email_verified) return token;
-        const dbUser = await prisma.user.upsert({
-          where: { email: profile.email.toLowerCase() },
-          update: {},
-          create: { email: profile.email.toLowerCase(), name: profile.name ?? null },
-        });
-        token.sub = dbUser.id;
+        const email = profile.email.toLowerCase();
+        const existing = await prisma.user.findUnique({ where: { email } });
+        let id: string;
+        if (!existing) {
+          id = (await prisma.user.create({ data: { email, name: profile.name ?? null, emailVerified: new Date() } })).id;
+        } else if (!existing.emailVerified) {
+          // Google proved who owns this email, so drop any password set by someone unverified.
+          await prisma.user.update({ where: { email }, data: { emailVerified: new Date(), passwordHash: null } });
+          id = existing.id;
+        } else {
+          id = existing.id;
+        }
+        token.sub = id;
       } else if (user?.id) {
         token.sub = user.id;
       }

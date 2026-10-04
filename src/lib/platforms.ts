@@ -18,9 +18,9 @@ export function getOAuth(p: OAuthPlatform) {
     authUrl: "https://www.facebook.com/v21.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
     profileUrl: "https://graph.facebook.com/v21.0/me?fields=id,name",
-    // TEST ONLY: after adding the Pages / Instagram use cases in the Meta app,
-    // restore the posting permissions here.
-    scope: "public_profile",
+    // Facebook needs the Pages permissions (add the Pages use case in the Meta app first).
+    // Instagram stays on public_profile until its own use case is added.
+    scope: p === "facebook" ? "pages_show_list,pages_manage_posts,pages_read_engagement" : "public_profile",
     id: process.env.META_APP_ID!,
     secret: process.env.META_APP_SECRET!,
   };

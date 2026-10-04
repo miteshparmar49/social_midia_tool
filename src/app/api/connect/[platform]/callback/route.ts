@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getUserId } from "@/lib/user";
 import { encrypt } from "@/lib/crypto";
 
+const GRAPH = "https://graph.facebook.com/v21.0";
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ platform: string }> }) {
   const { platform } = await params;
   const back = (q: string) => NextResponse.redirect(`${process.env.APP_URL}/dashboard${q}`);
@@ -29,16 +31,48 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
   const token = await tokenRes.json();
   if (!token.access_token) return back("?error=token");
 
+  const userId = await getUserId();
+  const p = platform.toUpperCase() as Platform;
+
+  if (platform === "facebook") {
+    // Swap for a long-lived user token. Page tokens made from it do not expire.
+    const long = await (
+      await fetch(
+        `${GRAPH}/oauth/access_token?` +
+          new URLSearchParams({
+            grant_type: "fb_exchange_token",
+            client_id: o.id,
+            client_secret: o.secret,
+            fb_exchange_token: token.access_token,
+          })
+      )
+    ).json();
+    const pagesRes = await (
+      await fetch(
+        `${GRAPH}/me/accounts?` +
+          new URLSearchParams({ fields: "id,name,access_token", access_token: long.access_token ?? token.access_token })
+      )
+    ).json();
+    const pages: { id: string; name: string; access_token: string }[] = pagesRes.data ?? [];
+    if (!pages.length) return back("?error=nopages");
+    for (const pg of pages) {
+      const data = { handle: pg.name, accessToken: encrypt(pg.access_token), expiresAt: null };
+      await prisma.socialAccount.upsert({
+        where: { userId_platform_externalId: { userId, platform: p, externalId: pg.id } },
+        update: data,
+        create: { userId, platform: p, externalId: pg.id, ...data },
+      });
+    }
+    return back("?connected=facebook");
+  }
+
   const profile = await (await fetch(o.profileUrl, { headers: { Authorization: `Bearer ${token.access_token}` } })).json();
   const externalId: string = profile.id ?? profile.sub;
-  const handle: string = profile.name ?? externalId;
-  const userId = await getUserId();
   const data = {
-    handle,
+    handle: (profile.name ?? externalId) as string,
     accessToken: encrypt(token.access_token),
     expiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
   };
-  const p = platform.toUpperCase() as Platform;
   await prisma.socialAccount.upsert({
     where: { userId_platform_externalId: { userId, platform: p, externalId } },
     update: data,

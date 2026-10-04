@@ -8,15 +8,17 @@ import { Bricolage_Grotesque } from "next/font/google";
 
 const font = Bricolage_Grotesque({ subsets: ["latin"] });
 
-export default function AuthForm({ mode }: { mode: "login" | "register" }) {
+export default function AuthForm({ mode, notice }: { mode: "login" | "register"; notice?: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [info, setInfo] = useState(notice ?? "");
   const [busy, setBusy] = useState(false);
   const isRegister = mode === "register";
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+    setInfo("");
     setBusy(true);
     const f = new FormData(e.currentTarget);
     const email = String(f.get("email"));
@@ -28,16 +30,26 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: f.get("name"), email, password }),
       });
-      if (!res.ok) {
-        setError((await res.json()).error ?? "Could not create the account");
-        setBusy(false);
-        return;
-      }
+      setBusy(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(data.error ?? "Could not create the account");
+      return setInfo(
+        data.emailSent === false
+          ? "Account created, but the verification email could not be sent. Use Forgot password on the login page."
+          : "Account created. We sent a verification link to your email. Open it, then log in."
+      );
     }
 
     const result = await signIn("credentials", { email, password, redirect: false });
     setBusy(false);
-    if (result?.error) return setError("Wrong email or password");
+    if (result?.error) {
+      const code = (result as { code?: string }).code;
+      return setError(
+        code === "not_verified"
+          ? "Please verify your email first. Check your inbox, or use Forgot password."
+          : "Wrong email or password"
+      );
+    }
     router.push("/dashboard");
     router.refresh();
   }
@@ -49,6 +61,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     <main className={`${font.className} grid min-h-screen place-items-center bg-slate-100 px-4`}>
       <form onSubmit={onSubmit} className="w-full max-w-sm rounded-xl bg-white p-6">
         <h1 className="text-2xl font-semibold tracking-tight">{isRegister ? "Create your account" : "Log in"}</h1>
+        {info && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">{info}</p>}
         {isRegister && (
           <label className="mt-5 block text-sm font-medium">
             Name
@@ -70,6 +83,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             className={input}
           />
         </label>
+        {!isRegister && (
+          <p className="mt-2 text-right text-sm">
+            <Link href="/forgot-password" className="text-slate-700 underline">Forgot password?</Link>
+          </p>
+        )}
         {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
         <button
           disabled={busy}

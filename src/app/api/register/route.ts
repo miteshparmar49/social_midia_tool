@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { sendVerifyEmail } from "@/lib/tokens";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -16,9 +17,17 @@ export async function POST(req: NextRequest) {
   }
   const email = body.data.email.toLowerCase();
   if (await prisma.user.findUnique({ where: { email } })) {
-    return NextResponse.json({ error: "This email is already registered. Log in instead." }, { status: 409 });
+    return NextResponse.json({ error: "This email is already registered. Log in or use Forgot password." }, { status: 409 });
   }
   const passwordHash = await bcrypt.hash(body.data.password, 12);
   await prisma.user.create({ data: { name: body.data.name, email, passwordHash } });
-  return NextResponse.json({ ok: true }, { status: 201 });
+
+  let emailSent = true;
+  try {
+    await sendVerifyEmail(email);
+  } catch (e) {
+    console.error("Verification email failed", e);
+    emailSent = false;
+  }
+  return NextResponse.json({ ok: true, emailSent }, { status: 201 });
 }
