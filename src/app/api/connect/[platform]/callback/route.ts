@@ -54,7 +54,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
       )
     ).json();
     const pages: { id: string; name: string; access_token: string }[] = pagesRes.data ?? [];
-    if (!pages.length) return back("?error=nopages");
+    // if (!pages.length) return back("?error=nopages");
+
+    if (!pages.length) {
+      const perms = await (
+        await fetch(`${GRAPH}/me/permissions?access_token=${encodeURIComponent(long.access_token ?? token.access_token)}`)
+      ).json();
+      console.error("Meta pages empty", JSON.stringify({ pagesRes, perms }));
+      return back("?error=nopages");
+    }
     for (const pg of pages) {
       const data = { handle: pg.name, accessToken: encrypt(pg.access_token), expiresAt: null };
       await prisma.socialAccount.upsert({
