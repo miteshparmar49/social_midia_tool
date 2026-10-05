@@ -47,24 +47,36 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
           })
       )
     ).json();
-    const pagesRes = await (
-      await fetch(
-        `${GRAPH}/me/accounts?` +
-          new URLSearchParams({ fields: "id,name,access_token", access_token: long.access_token ?? token.access_token })
-      )
-    ).json();
-    const pages: { id: string; name: string; access_token: string }[] = pagesRes.data ?? [];
-    // if (!pages.length) return back("?error=nopages");
+    const userToken: string = long.access_token ?? token.access_token;
+    const get = async (path: string, extra: Record<string, string> = {}) =>
+      (await fetch(`${GRAPH}/${path}?` + new URLSearchParams({ ...extra, access_token: userToken }))).json();
+
+    type Pg = { id: string; name: string; access_token?: string };
+    const pagesRes = await get("me/accounts", { fields: "id,name,access_token" });
+    let pages: Pg[] = pagesRes.data ?? [];
+
+    // Pages owned by a Business portfolio can only be reached through the business.
+    if (!pages.length) {
+      const biz = await get("me/businesses", { fields: "id,name" });
+      for (const b of (biz.data ?? []) as { id: string }[]) {
+        const owned = await get(`${b.id}/owned_pages`, { fields: "id,name,access_token" });
+        pages = pages.concat(owned.data ?? []);
+      }
+    }
+    pages = pages.filter((p) => p.access_token);
 
     if (!pages.length) {
-      const perms = await (
-        await fetch(`${GRAPH}/me/permissions?access_token=${encodeURIComponent(long.access_token ?? token.access_token)}`)
-      ).json();
-      console.error("Meta pages empty", JSON.stringify({ pagesRes, perms }));
-      return back("?error=nopages");
+      // Show which permissions Facebook really granted (names only, no tokens).
+      const perms = await get("me/permissions");
+      const granted = ((perms.data ?? []) as { permission: string; status: string }[])
+        .filter((x) => x.status === "granted")
+        .map((x) => x.permission)
+        .join(",");
+      console.error("Meta pages empty", JSON.stringify({ pagesRes, granted }));
+      return back(`?error=nopages&granted=${encodeURIComponent(granted)}`);
     }
     for (const pg of pages) {
-      const data = { handle: pg.name, accessToken: encrypt(pg.access_token), expiresAt: null };
+      const data = { handle: pg.name, accessToken: encrypt(pg.access_token as string), expiresAt: null };
       await prisma.socialAccount.upsert({
         where: { userId_platform_externalId: { userId, platform: p, externalId: pg.id } },
         update: data,
@@ -88,4 +100,3 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
   });
   return back("?connected=" + platform);
 }
-

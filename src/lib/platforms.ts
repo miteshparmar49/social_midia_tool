@@ -20,8 +20,7 @@ export function getOAuth(p: OAuthPlatform) {
     profileUrl: "https://graph.facebook.com/v21.0/me?fields=id,name",
     // Facebook needs the Pages permissions (add the Pages use case in the Meta app first).
     // Instagram stays on public_profile until its own use case is added.
-    // scope: p === "facebook" ? "pages_show_list,pages_manage_posts,pages_read_engagement" : "public_profile",
-       scope: p === "facebook" ? "pages_show_list,pages_manage_posts,pages_read_engagement,business_management" : "public_profile",
+    scope: p === "facebook" ? "pages_show_list,pages_manage_posts,pages_read_engagement,business_management" : "public_profile",
     id: process.env.META_APP_ID!,
     secret: process.env.META_APP_SECRET!,
   };

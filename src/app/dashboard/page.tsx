@@ -45,6 +45,20 @@ export default function DashboardPage() {
     whatsapp: null,
   });
   const [posts, setPosts] = useState<Post[]>([]);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const err = q.get("error");
+    const ok = q.get("connected");
+    if (ok) setNotice({ ok: true, text: `${ok} connected` });
+    else if (err === "nopages")
+      setNotice({
+        ok: false,
+        text: `Facebook did not return any Page. Permissions granted: ${q.get("granted") || "none"}. Make sure you manage a Facebook Page, then press Connect, choose Edit settings and tick the Page.`,
+      });
+    else if (err) setNotice({ ok: false, text: `Connect failed (${err}). Please try again.` });
+  }, []);
 
   useEffect(() => {
     fetch("/api/accounts")
@@ -94,6 +108,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {notice && (
+        <p role="status" className={`rounded-xl border p-3 text-sm ${notice.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>
+          {notice.text}
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
