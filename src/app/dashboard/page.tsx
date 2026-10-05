@@ -57,7 +57,7 @@ export default function DashboardPage() {
         ok: false,
         text: `Facebook did not return any Page. Granted: ${q.get("granted") || "none"}. Pages from account: ${q.get("acct") ?? "?"}, ticked Pages: ${q.get("targets") ?? "?"}, businesses: ${q.get("biz") ?? "?"}. ${q.get("why") ? "Facebook says: " + q.get("why") : ""}`,
       });
-    else if (err) setNotice({ ok: false, text: `Connect failed (${err}). Please try again.` });
+    else if (err) setNotice({ ok: false, text: `Connect failed (${err}). ${q.get("why") ?? "Please try again."}` });
   }, []);
 
   useEffect(() => {

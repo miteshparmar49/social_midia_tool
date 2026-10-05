@@ -7,7 +7,9 @@ import { encrypt } from "@/lib/crypto";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ platform: string }> }) {
+type Ctx = { params: Promise<{ platform: string }> };
+
+async function handle(req: NextRequest, { params }: Ctx) {
   const { platform } = await params;
   const back = (q: string) => NextResponse.redirect(`${process.env.APP_URL}/dashboard${q}`);
   if (!isOAuthPlatform(platform)) return back("?error=platform");
@@ -127,4 +129,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
     create: { userId, platform: p, externalId, ...data },
   });
   return back("?connected=" + platform);
+}
+
+// Any crash is shown on the dashboard instead of a blank 500 page.
+export async function GET(req: NextRequest, ctx: Ctx) {
+  try {
+    return await handle(req, ctx);
+  } catch (e) {
+    console.error("connect callback failed", e);
+    const why = e instanceof Error ? e.message : "unknown";
+    return NextResponse.redirect(
+      `${process.env.APP_URL}/dashboard?error=server&why=${encodeURIComponent(why.slice(0, 160))}`
+    );
+  }
 }
