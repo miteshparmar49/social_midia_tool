@@ -54,26 +54,54 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ plat
     type Pg = { id: string; name: string; access_token?: string };
     const pagesRes = await get("me/accounts", { fields: "id,name,access_token" });
     let pages: Pg[] = pagesRes.data ?? [];
+    const fromAccounts = pages.length;
+    let why = pagesRes.error?.message ?? "";
 
-    // Pages owned by a Business portfolio can only be reached through the business.
-    if (!pages.length) {
-      const biz = await get("me/businesses", { fields: "id,name" });
-      for (const b of (biz.data ?? []) as { id: string }[]) {
-        const owned = await get(`${b.id}/owned_pages`, { fields: "id,name,access_token" });
-        pages = pages.concat(owned.data ?? []);
+    // Pages the user ticked in the Facebook dialog are listed in the token's granular scopes.
+    let targets: string[] = [];
+    if (!pages.some((p) => p.access_token)) {
+      const dbg = await (
+        await fetch(`${GRAPH}/debug_token?` + new URLSearchParams({ input_token: userToken, access_token: `${o.id}|${o.secret}` }))
+      ).json();
+      const scopes = (dbg.data?.granular_scopes ?? []) as { scope: string; target_ids?: string[] }[];
+      targets = Array.from(new Set(scopes.filter((x) => x.scope.startsWith("pages_")).flatMap((x) => x.target_ids ?? [])));
+      for (const id of targets) {
+        const pg = await get(id, { fields: "id,name,access_token" });
+        if (pg.id) pages.push(pg);
+        else why = pg.error?.message ?? why;
       }
     }
-    pages = pages.filter((p) => p.access_token);
+
+    // Last try: Pages owned by a Business portfolio.
+    let bizCount = 0;
+    if (!pages.some((p) => p.access_token)) {
+      const biz = await get("me/businesses", { fields: "id,name" });
+      for (const b of (biz.data ?? []) as { id: string }[]) {
+        bizCount++;
+        const owned = await get(`${b.id}/owned_pages`, { fields: "id,name,access_token" });
+        pages = pages.concat(owned.data ?? []);
+        if (owned.error) why = owned.error.message;
+      }
+    }
+
+    pages = pages.filter((p, i, a) => p.access_token && a.findIndex((q) => q.id === p.id) === i);
 
     if (!pages.length) {
-      // Show which permissions Facebook really granted (names only, no tokens).
       const perms = await get("me/permissions");
       const granted = ((perms.data ?? []) as { permission: string; status: string }[])
         .filter((x) => x.status === "granted")
         .map((x) => x.permission)
         .join(",");
-      console.error("Meta pages empty", JSON.stringify({ pagesRes, granted }));
-      return back(`?error=nopages&granted=${encodeURIComponent(granted)}`);
+      console.error("Meta pages empty", JSON.stringify({ pagesRes, targets, bizCount, why }));
+      const q = new URLSearchParams({
+        error: "nopages",
+        granted,
+        acct: String(fromAccounts),
+        targets: String(targets.length),
+        biz: String(bizCount),
+        why: why.slice(0, 160),
+      });
+      return back("?" + q.toString());
     }
     for (const pg of pages) {
       const data = { handle: pg.name, accessToken: encrypt(pg.access_token as string), expiresAt: null };

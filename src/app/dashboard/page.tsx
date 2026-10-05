@@ -55,7 +55,7 @@ export default function DashboardPage() {
     else if (err === "nopages")
       setNotice({
         ok: false,
-        text: `Facebook did not return any Page. Permissions granted: ${q.get("granted") || "none"}. Make sure you manage a Facebook Page, then press Connect, choose Edit settings and tick the Page.`,
+        text: `Facebook did not return any Page. Granted: ${q.get("granted") || "none"}. Pages from account: ${q.get("acct") ?? "?"}, ticked Pages: ${q.get("targets") ?? "?"}, businesses: ${q.get("biz") ?? "?"}. ${q.get("why") ? "Facebook says: " + q.get("why") : ""}`,
       });
     else if (err) setNotice({ ok: false, text: `Connect failed (${err}). Please try again.` });
   }, []);
