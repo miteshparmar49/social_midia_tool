@@ -116,6 +116,34 @@ async function handle(req: NextRequest, { params }: Ctx) {
     return back("?connected=facebook");
   }
 
+  if (platform === "instagram") {
+    // Short-lived token (1 hour) -> long-lived token (60 days), then read the Instagram account.
+    const shortToken: string = token.data?.[0]?.access_token ?? token.access_token;
+    const long = await (
+      await fetch(
+        "https://graph.instagram.com/access_token?" +
+          new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: o.secret, access_token: shortToken })
+      )
+    ).json();
+    const accessToken: string = long.access_token ?? shortToken;
+    const me = await (
+      await fetch(`${o.profileUrl}?` + new URLSearchParams({ fields: "user_id,username", access_token: accessToken }))
+    ).json();
+    const igId = String(me.user_id ?? token.user_id ?? "");
+    if (!igId) return back("?error=instagram");
+    const igData = {
+      handle: me.username ? `@${me.username}` : igId,
+      accessToken: encrypt(accessToken),
+      expiresAt: new Date(Date.now() + (long.expires_in ?? 3600) * 1000),
+    };
+    await prisma.socialAccount.upsert({
+      where: { userId_platform_externalId: { userId, platform: p, externalId: igId } },
+      update: igData,
+      create: { userId, platform: p, externalId: igId, ...igData },
+    });
+    return back("?connected=instagram");
+  }
+
   const profile = await (await fetch(o.profileUrl, { headers: { Authorization: `Bearer ${token.access_token}` } })).json();
   const externalId: string = profile.id ?? profile.sub;
   const data = {

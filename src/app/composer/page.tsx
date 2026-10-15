@@ -10,7 +10,7 @@ const PLATFORMS: { key: PlatformKey; name: string; color: string; locked?: strin
   { key: "FACEBOOK", name: "Facebook", color: "#1877F2" },
   { key: "LINKEDIN", name: "LinkedIn", color: "#0A66C2", locked: "LinkedIn publishing is coming soon." },
   { key: "WHATSAPP", name: "WhatsApp", color: "#1FA855", locked: "WhatsApp publishing is coming soon." },
-  { key: "INSTAGRAM", name: "Instagram", color: "#C13584", locked: "Instagram publishing is coming soon." },
+  { key: "INSTAGRAM", name: "Instagram", color: "#C13584" },
 ];
 
 const MB = 1024 * 1024;
@@ -68,6 +68,10 @@ export default function ComposerPage() {
     setError("");
     if (!text.trim()) return setError("Write something to post");
     if (!selected.length) return setError("Choose at least one platform");
+    if (selected.includes("INSTAGRAM")) {
+      if (!file) return setError("Instagram needs a photo");
+      if (file.type !== "image/jpeg") return setError("Instagram needs a JPG photo for now");
+    }
     const date = new Date(when);
     if (isNaN(date.getTime()) || date.getTime() < Date.now()) return setError("Pick a time in the future");
 
