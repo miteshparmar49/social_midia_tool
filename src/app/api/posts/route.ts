@@ -10,9 +10,16 @@ const schema = z.object({
   mediaKeys: z.array(z.string()).max(1).default([]),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const userId = await getUserId();
-  const posts = await prisma.post.findMany({ where: { userId }, orderBy: { scheduledAt: "desc" }, take: 20 });
+  const from = new Date(req.nextUrl.searchParams.get("from") ?? "");
+  const to = new Date(req.nextUrl.searchParams.get("to") ?? "");
+  const ranged = !isNaN(from.getTime()) && !isNaN(to.getTime());
+  const posts = await prisma.post.findMany({
+    where: { userId, ...(ranged ? { scheduledAt: { gte: from, lt: to } } : {}) },
+    orderBy: { scheduledAt: ranged ? "asc" : "desc" },
+    take: ranged ? 500 : 20,
+  });
   return NextResponse.json(posts);
 }
 

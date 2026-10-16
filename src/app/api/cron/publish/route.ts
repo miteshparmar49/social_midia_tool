@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { publishPost } from "@/lib/publish";
+import { refreshInstagramTokens } from "@/lib/instagram";
+
+// Instagram videos can take up to a minute to process.
+export const maxDuration = 60;
 
 // Called every minute by a cron service with:  Authorization: Bearer <CRON_SECRET>
 export async function GET(req: NextRequest) {
@@ -32,5 +36,7 @@ export async function GET(req: NextRequest) {
     if (result.ok) published++;
     else failed++;
   }
-  return NextResponse.json({ checked: due.length, published, failed });
+  // Once an hour is enough to renew Instagram tokens before they expire.
+  const igRefreshed = new Date().getMinutes() < 5 ? await refreshInstagramTokens() : 0;
+  return NextResponse.json({ checked: due.length, published, failed, igRefreshed });
 }

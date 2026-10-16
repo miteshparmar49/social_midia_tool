@@ -10,6 +10,7 @@ const font = Inter({ subsets: ["latin"] });
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", d: "M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10" },
+  { href: "/calendar", label: "Calendar", d: "M7 3v3M17 3v3M4 8h16M5 5h14v15H5z" },
   { href: "/composer", label: "New post", d: "M12 5v14M5 12h14" },
   { href: "/pricing", label: "Plans", d: "M3 7h18v10H3zM3 11h18" },
 ];

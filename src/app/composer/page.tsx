@@ -20,6 +20,26 @@ function toLocalInput(d: Date) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+// Instagram accepts JPG photos only, and a width-to-height ratio from 4:5 to 1.91:1.
+async function prepareForInstagram(f: File): Promise<File> {
+  const bmp = await createImageBitmap(f);
+  const ratio = bmp.width / bmp.height;
+  if (ratio < 0.8 || ratio > 1.91) {
+    throw new Error("Instagram needs a photo between 4:5 (portrait) and 1.91:1 (landscape) shape");
+  }
+  if (f.type === "image/jpeg") return f;
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width;
+  canvas.height = bmp.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff"; // PNG transparency becomes white
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, 0, 0);
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+  if (!blob) throw new Error("Could not convert the photo to JPG");
+  return new File([blob], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
 export default function ComposerPage() {
   const router = useRouter();
   const [connected, setConnected] = useState<PlatformKey[] | null>(null);
@@ -33,7 +53,10 @@ export default function ComposerPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setWhen(toLocalInput(new Date(Date.now() + 60 * 60 * 1000)));
+    const fallback = new Date(Date.now() + 60 * 60 * 1000);
+    const q = new URLSearchParams(window.location.search).get("date");
+    const picked = q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? new Date(`${q}T10:00`) : fallback;
+    setWhen(toLocalInput(picked.getTime() > Date.now() ? picked : fallback));
     fetch("/api/accounts")
       .then((r) => r.json())
       .then((rows: { platform: PlatformKey }[]) => setConnected(rows.map((r) => r.platform)))
@@ -68,10 +91,7 @@ export default function ComposerPage() {
     setError("");
     if (!text.trim()) return setError("Write something to post");
     if (!selected.length) return setError("Choose at least one platform");
-    if (selected.includes("INSTAGRAM")) {
-      if (!file) return setError("Instagram needs a photo");
-      if (file.type !== "image/jpeg") return setError("Instagram needs a JPG photo for now");
-    }
+    if (selected.includes("INSTAGRAM") && !file) return setError("Instagram needs a photo or video");
     const date = new Date(when);
     if (isNaN(date.getTime()) || date.getTime() < Date.now()) return setError("Pick a time in the future");
 
@@ -79,15 +99,17 @@ export default function ComposerPage() {
     try {
       let mediaKeys: string[] = [];
       if (file) {
+        setStatus("Preparing file");
+        const upload = selected.includes("INSTAGRAM") && file.type.startsWith("image/") ? await prepareForInstagram(file) : file;
         setStatus("Uploading file");
         const r = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size }),
+          body: JSON.stringify({ filename: upload.name, contentType: upload.type, size: upload.size }),
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Could not start the upload");
         const { url, key } = await r.json();
-        const put = await fetch(url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        const put = await fetch(url, { method: "PUT", headers: { "Content-Type": upload.type }, body: upload });
         if (!put.ok) throw new Error("Upload failed. Check the storage and CORS settings.");
         mediaKeys = [key];
       }
