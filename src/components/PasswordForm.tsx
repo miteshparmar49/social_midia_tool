@@ -3,9 +3,10 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Bricolage_Grotesque } from "next/font/google";
+import AuthShell from "@/components/AuthShell";
 
-const font = Bricolage_Grotesque({ subsets: ["latin"] });
+const inputCls =
+  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100";
 
 export default function PasswordForm({ mode, token }: { mode: "forgot" | "reset"; token?: string }) {
   const router = useRouter();
@@ -32,29 +33,40 @@ export default function PasswordForm({ mode, token }: { mode: "forgot" | "reset"
   }
 
   return (
-    <main className={`${font.className} grid min-h-screen place-items-center bg-slate-100 px-4`}>
-      <form onSubmit={onSubmit} className="w-full max-w-sm rounded-xl bg-white p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{isForgot ? "Forgot password" : "Choose a new password"}</h1>
-        {isForgot ? (
-          <label className="mt-5 block text-sm font-medium">
-            Email
-            <input name="email" type="email" required autoComplete="email" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+    <AuthShell>
+      <form onSubmit={onSubmit}>
+        <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">MVP InfoTech</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+          {isForgot ? "Forgot password?" : "Choose a new password"}
+        </h1>
+        <p className="mt-1 text-sm text-slate-500">
+          {isForgot ? "Enter your email and we will send you a reset link." : "Use at least 8 characters."}
+        </p>
+
+        <div className="mt-6">
+          <label htmlFor="f" className="mb-1.5 block text-sm font-medium text-slate-700">
+            {isForgot ? "Email address" : "New password"}
           </label>
-        ) : (
-          <label className="mt-5 block text-sm font-medium">
-            New password
-            <input name="password" type="password" required minLength={8} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
-          </label>
-        )}
-        {info && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">{info}</p>}
-        {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-        <button disabled={busy} className="mt-5 w-full rounded-lg bg-slate-900 py-2.5 font-medium text-white hover:bg-slate-700 disabled:opacity-60">
+          {isForgot ? (
+            <input id="f" name="email" type="email" required autoComplete="email" placeholder="name@company.com" className={inputCls} />
+          ) : (
+            <input id="f" name="password" type="password" required minLength={8} autoComplete="new-password" className={inputCls} />
+          )}
+        </div>
+
+        {info && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{info}</p>}
+        {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+
+        <button
+          disabled={busy}
+          className="mt-6 w-full rounded-xl bg-gradient-to-r from-[#0a1a44] to-[#1d4ed8] py-3.5 font-semibold text-white shadow-lg shadow-blue-900/20 transition hover:brightness-110 disabled:opacity-60"
+        >
           {busy ? "Please wait" : isForgot ? "Send reset link" : "Save password"}
         </button>
-        <p className="mt-4 text-center text-sm">
-          <Link href="/login" className="font-medium text-slate-900 underline">Back to log in</Link>
+        <p className="mt-6 text-center text-sm">
+          <Link href="/login" className="font-semibold text-blue-700 hover:underline">Back to log in</Link>
         </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

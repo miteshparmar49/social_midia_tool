@@ -11,5 +11,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       : q.verify
         ? "That verification link is invalid or expired. Use Forgot password to get in."
         : undefined;
-  return <AuthForm mode="login" notice={notice} />;
+  // The Google button only appears when the Google keys are set.
+  const googleEnabled = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+  return <AuthForm mode="login" notice={notice} googleEnabled={googleEnabled} />;
 }

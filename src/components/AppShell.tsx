@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Inter } from "next/font/google";
@@ -26,7 +27,7 @@ function Icon({ d }: { d: string }) {
 function Brand() {
   return (
     <Link href="/dashboard" className="flex items-center gap-2.5 font-semibold tracking-tight">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 text-sm text-white">S</span>
+      <Image src="/logo.png" alt="MVP InfoTech" width={32} height={32} className="rounded-full" />
       Social Tool
     </Link>
   );
