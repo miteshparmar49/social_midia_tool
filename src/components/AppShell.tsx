@@ -16,6 +16,8 @@ const NAV = [
   { href: "/pricing", label: "Plans", d: "M3 7h18v10H3zM3 11h18" },
 ];
 
+const ADMIN_NAV = { href: "/admin", label: "Admin", d: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" };
+
 function Icon({ d }: { d: string }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -33,7 +35,7 @@ function Brand() {
   );
 }
 
-export default function AppShell({ name, email, children }: { name: string; email: string; children: React.ReactNode }) {
+export default function AppShell({ name, email, isAdmin = false, children }: { name: string; email: string; isAdmin?: boolean; children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const initial = (name || email || "?")[0].toUpperCase();
@@ -54,7 +56,7 @@ export default function AppShell({ name, email, children }: { name: string; emai
           <Brand />
         </div>
         <nav className="flex flex-col gap-1">
-          {NAV.map((n) => {
+          {(isAdmin ? [...NAV, ADMIN_NAV] : NAV).map((n) => {
             const active = path === n.href;
             return (
               <Link
