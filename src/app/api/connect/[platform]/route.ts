@@ -18,7 +18,10 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   const url = new URL(o.authUrl);
   url.search = new URLSearchParams({
     client_id: o.id,
-    redirect_uri: `${process.env.APP_URL}/api/connect/${platform}/callback`,
+   redirect_uri:
+  platform === "linkedin"
+    ? process.env.LINKEDIN_REDIRECT_URI!
+    : `${process.env.APP_URL}/api/connect/${platform}/callback`,
     scope: o.scope,
     response_type: "code",
     state,
