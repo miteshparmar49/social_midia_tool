@@ -35,38 +35,111 @@
 //     secret: process.env.META_APP_SECRET!,
 //   };
 // }
-export type OAuthPlatform = "instagram" | "facebook" | "linkedin";
+// export type OAuthPlatform = "instagram" | "facebook" | "linkedin";
 
-export const isOAuthPlatform = (p: string): p is OAuthPlatform =>
-  ["instagram", "facebook", "linkedin"].includes(p);
+// export const isOAuthPlatform = (p: string): p is OAuthPlatform =>
+//   ["instagram", "facebook", "linkedin"].includes(p);
+
+// export function getOAuth(p: OAuthPlatform) {
+//   if (p === "linkedin") {
+//     return {
+//       authUrl: "https://www.linkedin.com/oauth/v2/authorization",
+//       tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+//       profileUrl: "https://api.linkedin.com/v2/userinfo",
+//       scope: "openid profile w_member_social",
+//       id: process.env.LINKEDIN_CLIENT_ID!,
+//       secret: process.env.LINKEDIN_CLIENT_SECRET!,
+//     };
+//   }
+
+//   if (p === "instagram") {
+//     return {
+//       authUrl: "https://www.instagram.com/oauth/authorize",
+//       tokenUrl: "https://api.instagram.com/oauth/access_token",
+//       profileUrl: "https://graph.instagram.com/v21.0/me",
+//       scope: "instagram_business_basic,instagram_business_content_publish",
+//       id: process.env.INSTAGRAM_APP_ID!,
+//       secret: process.env.INSTAGRAM_APP_SECRET!,
+//     };
+//   }
+
+//   return {
+//     authUrl: "https://www.facebook.com/v21.0/dialog/oauth",
+//     tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
+//     profileUrl: "https://graph.facebook.com/v21.0/me?fields=id,name",
+//     scope:
+//       "pages_show_list,pages_manage_posts,pages_read_engagement,business_management",
+//     id: process.env.META_APP_ID!,
+//     secret: process.env.META_APP_SECRET!,
+//   };
+// }
+
+
+
+
+export type OAuthPlatform =
+  | "instagram"
+  | "facebook"
+  | "linkedin"
+  | "youtube";
+
+export const isOAuthPlatform = (
+  p: string
+): p is OAuthPlatform =>
+  ["instagram", "facebook", "linkedin", "youtube"].includes(p);
 
 export function getOAuth(p: OAuthPlatform) {
   if (p === "linkedin") {
     return {
-      authUrl: "https://www.linkedin.com/oauth/v2/authorization",
-      tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
-      profileUrl: "https://api.linkedin.com/v2/userinfo",
+      authUrl:
+        "https://www.linkedin.com/oauth/v2/authorization",
+      tokenUrl:
+        "https://www.linkedin.com/oauth/v2/accessToken",
+      profileUrl:
+        "https://api.linkedin.com/v2/userinfo",
       scope: "openid profile w_member_social",
       id: process.env.LINKEDIN_CLIENT_ID!,
       secret: process.env.LINKEDIN_CLIENT_SECRET!,
     };
   }
 
+  if (p === "youtube") {
+    return {
+      authUrl:
+        "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl:
+        "https://oauth2.googleapis.com/token",
+      profileUrl:
+        "https://www.googleapis.com/youtube/v3/channels?part=snippet%2CcontentDetails%2Cstatistics&mine=true",
+      scope:
+        "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+      id: process.env.GOOGLE_CLIENT_ID!,
+      secret: process.env.GOOGLE_CLIENT_SECRET!,
+    };
+  }
+
   if (p === "instagram") {
     return {
-      authUrl: "https://www.instagram.com/oauth/authorize",
-      tokenUrl: "https://api.instagram.com/oauth/access_token",
-      profileUrl: "https://graph.instagram.com/v21.0/me",
-      scope: "instagram_business_basic,instagram_business_content_publish",
+      authUrl:
+        "https://www.instagram.com/oauth/authorize",
+      tokenUrl:
+        "https://api.instagram.com/oauth/access_token",
+      profileUrl:
+        "https://graph.instagram.com/v21.0/me",
+      scope:
+        "instagram_business_basic,instagram_business_content_publish",
       id: process.env.INSTAGRAM_APP_ID!,
       secret: process.env.INSTAGRAM_APP_SECRET!,
     };
   }
 
   return {
-    authUrl: "https://www.facebook.com/v21.0/dialog/oauth",
-    tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
-    profileUrl: "https://graph.facebook.com/v21.0/me?fields=id,name",
+    authUrl:
+      "https://www.facebook.com/v21.0/dialog/oauth",
+    tokenUrl:
+      "https://graph.facebook.com/v21.0/oauth/access_token",
+    profileUrl:
+      "https://graph.facebook.com/v21.0/me?fields=id,name",
     scope:
       "pages_show_list,pages_manage_posts,pages_read_engagement,business_management",
     id: process.env.META_APP_ID!,

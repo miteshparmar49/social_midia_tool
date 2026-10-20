@@ -242,13 +242,19 @@ import { useEffect, useState, FormEvent, ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-type PlatformKey = "INSTAGRAM" | "FACEBOOK" | "LINKEDIN" | "WHATSAPP";
+type PlatformKey = "INSTAGRAM" | "FACEBOOK" | "LINKEDIN" | "WHATSAPP" | "YOUTUBE";
 
-const PLATFORMS: { key: PlatformKey; name: string; color: string; locked?: string }[] = [
+const PLATFORMS: {
+  key: PlatformKey;
+  name: string;
+  color: string;
+  locked?: string;
+}[] = [
   { key: "FACEBOOK", name: "Facebook", color: "#1877F2" },
   { key: "LINKEDIN", name: "LinkedIn", color: "#0A66C2" },
   { key: "WHATSAPP", name: "WhatsApp", color: "#1FA855", locked: "WhatsApp publishing is coming soon." },
   { key: "INSTAGRAM", name: "Instagram", color: "#C13584" },
+  { key: "YOUTUBE", name: "YouTube", color: "#FF0000" },
 ];
 
 const MB = 1024 * 1024;
@@ -333,6 +339,12 @@ export default function ComposerPage() {
     if (!text.trim()) return setError("Write something to post");
     if (!selected.length) return setError("Choose at least one platform");
     if (selected.includes("INSTAGRAM") && !file) return setError("Instagram needs a photo or video");
+    if (
+        selected.includes("YOUTUBE") &&
+        (!file || file.type !== "video/mp4")
+      ) {
+        return setError("YouTube માટે MP4 video પસંદ કરો");
+      }
     if (selected.includes("LINKEDIN") && file?.type.startsWith("video/")) {
       return setError("LinkedIn video is not supported yet. Remove the video or untick LinkedIn.");
     }

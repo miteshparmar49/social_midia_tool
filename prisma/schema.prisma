@@ -8,32 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum Platform {
-  INSTAGRAM
-  FACEBOOK
-  LINKEDIN
-  WHATSAPP
-}
-
-enum PostStatus {
-  DRAFT
-  SCHEDULED
-  PUBLISHING
-  PUBLISHED
-  FAILED
-}
-
-enum Plan {
-  FREE
-  PRO
-  BUSINESS
-}
-
-enum TokenType {
-  VERIFY
-  RESET
-}
-
 model User {
   id            String          @id @default(cuid())
   email         String          @unique
@@ -41,8 +15,8 @@ model User {
   passwordHash  String?
   emailVerified DateTime?
   plan          Plan            @default(FREE)
-  accounts      SocialAccount[]
   posts         Post[]
+  accounts      SocialAccount[]
 }
 
 model SocialAccount {
@@ -66,8 +40,8 @@ model Post {
   platforms   Platform[]
   status      PostStatus @default(SCHEDULED)
   scheduledAt DateTime
-  error       String?
   createdAt   DateTime   @default(now())
+  error       String?
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, scheduledAt])
@@ -81,4 +55,31 @@ model AuthToken {
   expiresAt DateTime
 
   @@index([email, type])
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  WHATSAPP
+  YOUTUBE
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  PUBLISHING
+}
+
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum TokenType {
+  VERIFY
+  RESET
 }

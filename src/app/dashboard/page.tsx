@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-type PlatformId = "instagram" | "whatsapp" | "facebook" | "linkedin";
+type PlatformId = "instagram" | "whatsapp" | "facebook" | "linkedin" | "youtube";
 type Status = "scheduled" | "publishing" | "published" | "failed";
 
 interface Post {
@@ -15,11 +15,19 @@ interface Post {
   error: string | null;
 }
 
+// const PLATFORMS: { id: PlatformId; name: string; color: string; note: string }[] = [
+//   { id: "facebook", name: "Facebook", color: "#1877F2", note: "Pages you manage" },
+//   { id: "instagram", name: "Instagram", color: "#C13584", note: "Business or Creator account" },
+//   { id: "linkedin", name: "LinkedIn", color: "#0A66C2", note: "Profile or Company page" },
+//   { id: "whatsapp", name: "WhatsApp", color: "#1FA855", note: "Business number (Cloud API)" },
+// ];
+
 const PLATFORMS: { id: PlatformId; name: string; color: string; note: string }[] = [
   { id: "facebook", name: "Facebook", color: "#1877F2", note: "Pages you manage" },
   { id: "instagram", name: "Instagram", color: "#C13584", note: "Business or Creator account" },
   { id: "linkedin", name: "LinkedIn", color: "#0A66C2", note: "Profile or Company page" },
   { id: "whatsapp", name: "WhatsApp", color: "#1FA855", note: "Business number (Cloud API)" },
+  { id: "youtube", name: "YouTube", color: "#FF0000", note: "YouTube channel" },
 ];
 
 const STATUS_STYLE: Record<Status, string> = {
@@ -43,6 +51,7 @@ export default function DashboardPage() {
     facebook: null,
     linkedin: null,
     whatsapp: null,
+    youtube: null,
   });
   const [posts, setPosts] = useState<Post[]>([]);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
@@ -141,7 +150,7 @@ export default function DashboardPage() {
 
       <section aria-labelledby="accounts">
         <h2 id="accounts" className="mb-3 text-base font-semibold">Connected accounts</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {PLATFORMS.map((p) => {
             const handle = connected[p.id];
             return (
