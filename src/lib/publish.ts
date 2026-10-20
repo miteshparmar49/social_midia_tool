@@ -152,17 +152,185 @@ async function postToLinkedIn(userId: string, text: string, mediaKey?: string) {
   return res.headers.get("x-restli-id") ?? "";
 }
 
-export async function publishPost(post: Post): Promise<{ ok: boolean; error?: string }> {
+
+async function postToYouTube(
+  userId: string,
+  text: string,
+  mediaKey?: string
+) {
+  if (!mediaKey) {
+    throw new Error("YouTube needs an MP4 video");
+  }
+
+  if (!/\.mp4$/i.test(mediaKey)) {
+    throw new Error("YouTube currently supports MP4 videos only");
+  }
+
+  const acct = await prisma.socialAccount.findFirst({
+    where: { userId, platform: "YOUTUBE" },
+    orderBy: { id: "asc" },
+  });
+
+  if (!acct) {
+    throw new Error("No YouTube account connected");
+  }
+
+  if (acct.expiresAt && acct.expiresAt < new Date()) {
+    throw new Error(
+      "YouTube access token expired. Reconnect or refresh the Google token."
+    );
+  }
+
+  const token = decrypt(acct.accessToken);
+
+  // Read the video stored in Cloudflare R2.
+  const file = await fetch(publicUrl(mediaKey));
+
+  if (!file.ok) {
+    throw new Error(
+      `Could not read video from R2 (${file.status}). Check S3_PUBLIC_URL and object access.`
+    );
+  }
+
+  const contentType = file.headers.get("content-type") || "video/mp4";
+  const video = await file.arrayBuffer();
+
+  if (video.byteLength === 0) {
+    throw new Error("The video file is empty");
+  }
+
+  // Start a YouTube resumable upload session.
+  const initUrl = new URL(
+    "https://www.googleapis.com/upload/youtube/v3/videos"
+  );
+
+  initUrl.searchParams.set("uploadType", "resumable");
+  initUrl.searchParams.set("part", "snippet,status");
+
+  const title =
+    text.trim().split(/\r?\n/)[0].slice(0, 100) || "Scheduled video";
+
+  const init = await fetch(initUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Length": String(video.byteLength),
+      "X-Upload-Content-Type": contentType,
+    },
+    body: JSON.stringify({
+      snippet: {
+        title,
+        description: text,
+        categoryId: "22",
+      },
+      status: {
+        privacyStatus: "public",
+        selfDeclaredMadeForKids: false,
+      },
+    }),
+  });
+
+  if (!init.ok) {
+    const details = await init.text();
+    throw new Error(
+      `YouTube upload initialization failed (${init.status}): ${details.slice(0, 350)}`
+    );
+  }
+
+  const uploadUrl = init.headers.get("location");
+
+  if (!uploadUrl) {
+    throw new Error("YouTube did not return an upload URL");
+  }
+
+  // Upload the actual MP4 bytes to YouTube.
+  const uploaded = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": contentType,
+    },
+    body: video,
+  });
+
+  const result = await uploaded.json().catch(() => ({}));
+
+  if (!uploaded.ok) {
+    throw new Error(
+      `YouTube video upload failed (${uploaded.status}): ${
+        result?.error?.message || JSON.stringify(result).slice(0, 300)
+      }`
+    );
+  }
+
+  if (!result.id) {
+    throw new Error("YouTube upload completed without returning a video ID");
+  }
+
+  return result.id as string;
+}
+
+
+// export async function publishPost(post: Post): Promise<{ ok: boolean; error?: string }> {
+//   const errors: string[] = [];
+//   for (const platform of post.platforms) {
+//     try {
+//       if (platform === "FACEBOOK") await postToFacebook(post.userId, post.text, post.mediaKeys[0]);
+//       else if (platform === "INSTAGRAM") await postToInstagram(post.userId, post.text, post.mediaKeys[0]);
+//       else if (platform === "LINKEDIN") await postToLinkedIn(post.userId, post.text, post.mediaKeys[0]);
+//       else throw new Error("publishing is not built yet");
+//     } catch (e) {
+//       errors.push(`${platform}: ${e instanceof Error ? e.message : "failed"}`);
+//     }
+//   }
+//   return errors.length ? { ok: false, error: errors.join("; ").slice(0, 500) } : { ok: true };
+// }
+
+
+export async function publishPost(
+  post: Post
+): Promise<{ ok: boolean; error?: string }> {
   const errors: string[] = [];
+
   for (const platform of post.platforms) {
     try {
-      if (platform === "FACEBOOK") await postToFacebook(post.userId, post.text, post.mediaKeys[0]);
-      else if (platform === "INSTAGRAM") await postToInstagram(post.userId, post.text, post.mediaKeys[0]);
-      else if (platform === "LINKEDIN") await postToLinkedIn(post.userId, post.text, post.mediaKeys[0]);
-      else throw new Error("publishing is not built yet");
+      if (platform === "FACEBOOK") {
+        await postToFacebook(
+          post.userId,
+          post.text,
+          post.mediaKeys[0]
+        );
+      } else if (platform === "INSTAGRAM") {
+        await postToInstagram(
+          post.userId,
+          post.text,
+          post.mediaKeys[0]
+        );
+      } else if (platform === "LINKEDIN") {
+        await postToLinkedIn(
+          post.userId,
+          post.text,
+          post.mediaKeys[0]
+        );
+      } else if (platform === "YOUTUBE") {
+        await postToYouTube(
+          post.userId,
+          post.text,
+          post.mediaKeys[0]
+        );
+      } else {
+        throw new Error("Publishing is not built yet");
+      }
     } catch (e) {
-      errors.push(`${platform}: ${e instanceof Error ? e.message : "failed"}`);
+      errors.push(
+        `${platform}: ${e instanceof Error ? e.message : "failed"}`
+      );
     }
   }
-  return errors.length ? { ok: false, error: errors.join("; ").slice(0, 500) } : { ok: true };
+
+  return errors.length
+    ? { ok: false, error: errors.join("; ").slice(0, 500) }
+    : { ok: true };
 }
+
