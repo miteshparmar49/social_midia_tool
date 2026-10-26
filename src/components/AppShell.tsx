@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -26,6 +26,15 @@ function Icon({ d }: { d: string }) {
   );
 }
 
+function Spinner() {
+  return (
+    <svg className="ml-auto animate-spin text-indigo-600" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-label="Loading">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity=".25" />
+      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Brand() {
   return (
     <Link href="/dashboard" className="flex items-center gap-2.5 font-semibold tracking-tight">
@@ -38,10 +47,13 @@ function Brand() {
 export default function AppShell({ name, email, isAdmin = false, children }: { name: string; email: string; isAdmin?: boolean; children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => setPending(null), [path]); // page arrived, stop the spinner
   const initial = (name || email || "?")[0].toUpperCase();
 
   return (
     <div className={`${font.className} min-h-screen bg-slate-50 text-slate-900 lg:flex`}>
+      {pending && <div className="fixed left-0 top-0 z-50 h-0.5 w-full animate-pulse bg-indigo-600" aria-hidden />}
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
         <Brand />
         <button onClick={() => setOpen(!open)} aria-label="Menu" className="rounded-lg border border-slate-200 p-2">
@@ -62,7 +74,10 @@ export default function AppShell({ name, email, isAdmin = false, children }: { n
               <Link
                 key={n.href}
                 href={n.href}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  if (!active) setPending(n.href);
+                }}
                 aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${
                   active ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -70,6 +85,7 @@ export default function AppShell({ name, email, isAdmin = false, children }: { n
               >
                 <Icon d={n.d} />
                 {n.label}
+                {pending === n.href && <Spinner />}
               </Link>
             );
           })}

@@ -19,10 +19,12 @@ model User {
   accounts      SocialAccount[]
 }
 
+
 model SocialAccount {
   id          String    @id @default(cuid())
   userId      String
   platform    Platform
+  accountType String    @default("PERSONAL")
   externalId  String
   handle      String
   accessToken String
@@ -31,6 +33,7 @@ model SocialAccount {
 
   @@unique([userId, platform, externalId])
 }
+
 
 model Post {
   id          String     @id @default(cuid())
