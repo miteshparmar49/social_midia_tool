@@ -39,6 +39,7 @@ export default function PostPreview({ text, platforms, mediaUrl, mediaType, hand
   const isVideo = Boolean(mediaType?.startsWith("video/"));
   const name = handles[active] ?? "Your account";
   const body = text.trim();
+  const hasYtFields = ytTitle !== undefined; // false when the composer has no YouTube title field
   const warn: string[] = [];
   if (active === "INSTAGRAM") {
     if (!mediaUrl) warn.push("Instagram needs a photo or video.");
@@ -50,8 +51,8 @@ export default function PostPreview({ text, platforms, mediaUrl, mediaType, hand
   }
   if (active === "YOUTUBE") {
     if (!isVideo) warn.push("YouTube needs an MP4 video.");
-    if (!ytTitle?.trim()) warn.push("Add a video title.");
-    if (!ytPrivacy) warn.push("Choose who can watch the video.");
+    if (hasYtFields && !ytTitle?.trim()) warn.push("Add a video title.");
+    if (hasYtFields && !ytPrivacy) warn.push("Choose who can watch the video.");
   }
 
   const media = mediaUrl ? (
@@ -63,7 +64,8 @@ export default function PostPreview({ text, platforms, mediaUrl, mediaType, hand
     )
   ) : null;
 
-  const placeholder = <p className="text-slate-400">Your text will appear here</p>;
+  // const placeholder = <p className="text-slate-400">Your text will appear here</p>;
+  const placeholder = <span className="text-slate-400">Your text will appear here</span>;
   const schedule = when && !isNaN(new Date(when).getTime()) ? new Date(when).toLocaleString() : null;
 
   return (
@@ -99,7 +101,7 @@ export default function PostPreview({ text, platforms, mediaUrl, mediaType, hand
           <div>
             {isVideo && media ? media : <div className="grid aspect-video place-items-center bg-slate-900 text-xs text-slate-400">Choose an MP4 video</div>}
             <div className="p-3">
-              <p className="font-semibold">{ytTitle?.trim() || "Video title"}</p>
+              <p className="font-semibold">{(hasYtFields ? ytTitle?.trim() : body.split("\n")[0].slice(0, 100)) || "Video title"}</p>
               <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
                 <Avatar name={name} color={COLOR.YOUTUBE} />
                 <span>{name}</span>
