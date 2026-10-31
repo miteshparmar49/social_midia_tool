@@ -171,7 +171,9 @@ export async function publishPost(
         // Wait for media processing
         const waitForProcessing = async (containerId: string) => {
           for (let attempt = 0; attempt < 30; attempt++) {
-            await new Promise((resolve) => setTimeout(resolve, 10000));
+            await new Promise((resolve) =>
+              setTimeout(resolve, isVideo ? 10000 : 3000)
+            );
 
             const statusUrl = new URL(
               `https://graph.instagram.com/${graphVersion}/${containerId}`
@@ -251,10 +253,8 @@ export async function publishPost(
 
           console.log("Instagram Story Container:", container.id);
 
-          // Wait for video processing
-          if (isVideo) {
-            await waitForProcessing(container.id);
-          }
+          // Wait until Instagram finishes processing (image & video)
+          await waitForProcessing(container.id);
 
           await publishContainer(container.id);
 
@@ -313,9 +313,8 @@ export async function publishPost(
             throw new Error("Failed to create Instagram Post container");
           }
 
-          if (isVideo) {
-            await waitForProcessing(container.id);
-          }
+          // Wait until Instagram finishes processing (image & video)
+          await waitForProcessing(container.id);
 
           await publishContainer(container.id);
 
