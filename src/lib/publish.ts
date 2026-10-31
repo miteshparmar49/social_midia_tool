@@ -1,6 +1,9 @@
 import { prisma } from "./prisma";
 import { decrypt } from "./crypto";
 import type { Post } from "@prisma/client";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { s3 } from "./s3";
 
 // Convert Prisma JsonValue safely
 function toStringRecord(value: unknown): Record<string, string> {
@@ -56,8 +59,16 @@ export async function publishPost(
 
       const mediaKey = post.mediaKeys?.[0];
 
+      // Temporary public S3 URL (valid 1 hour) so Instagram/Facebook can download the file
       const mediaUrl = mediaKey
-        ? `${process.env.NEXT_PUBLIC_APP_URL || ""}/api/media/${mediaKey}`
+        ? await getSignedUrl(
+            s3,
+            new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET!,
+              Key: mediaKey,
+            }),
+            { expiresIn: 3600 }
+          )
         : null;
 
       // ==========================================
