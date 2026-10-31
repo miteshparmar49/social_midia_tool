@@ -59,6 +59,8 @@ export async function publishPost(
       }
 
       const accessToken = decrypt(account.accessToken);
+      console.log("Token length:", accessToken?.length);
+console.log("Token starts with:", accessToken?.slice(0, 4));
       const accountId = account.externalId;
 
       const mediaKey = post.mediaKeys?.[0];
