@@ -19,7 +19,6 @@ model User {
   accounts      SocialAccount[]
 }
 
-
 model SocialAccount {
   id          String    @id @default(cuid())
   userId      String
@@ -34,11 +33,12 @@ model SocialAccount {
   @@unique([userId, platform, externalId])
 }
 
-
 model Post {
   id          String     @id @default(cuid())
   userId      String
   text        String
+  customTexts Json?
+  formats     Json?
   mediaKeys   String[]
   platforms   Platform[]
   status      PostStatus @default(SCHEDULED)

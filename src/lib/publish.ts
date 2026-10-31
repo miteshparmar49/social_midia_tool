@@ -1,336 +1,404 @@
-import type { Post } from "@prisma/client";
+
 import { prisma } from "./prisma";
 import { decrypt } from "./crypto";
+import type { Post } from "@prisma/client";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
-
-function publicUrl(key: string) {
-  const base = process.env.S3_PUBLIC_URL;
-  if (!base) throw new Error("S3_PUBLIC_URL is not set");
-  return `${base.replace(/\/$/, "")}/${key}`;
-}
-
-// Posts to the user's first connected Facebook Page: text, one photo or one video.
-async function postToFacebook(userId: string, text: string, mediaKey?: string) {
-  const page = await prisma.socialAccount.findFirst({
-    where: { userId, platform: "FACEBOOK" },
-    orderBy: { id: "asc" },
-  });
-  if (!page) throw new Error("No Facebook Page connected");
-
-  const params = new URLSearchParams({ access_token: decrypt(page.accessToken) });
-  let path = "feed";
-  if (mediaKey) {
-    const isVideo = /\.mp4$/i.test(mediaKey);
-    path = isVideo ? "videos" : "photos";
-    params.set(isVideo ? "file_url" : "url", publicUrl(mediaKey));
-    params.set(isVideo ? "description" : "caption", text);
-  } else {
-    params.set("message", text);
+// Convert Prisma JsonValue safely
+function toStringRecord(value: unknown): Record<string, string> {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return {};
   }
 
-  const res = await fetch(`${GRAPH}/${page.externalId}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message ?? "Facebook error");
-  return data.id as string;
-}
-
-// Posts one JPG photo or one MP4 video (published as a Reel) to the user's Instagram professional account.
-async function postToInstagram(userId: string, text: string, mediaKey?: string) {
-  if (!mediaKey) throw new Error("Instagram needs a photo or video");
-  const isVideo = /\.mp4$/i.test(mediaKey);
-  if (!isVideo && !/\.jpe?g$/i.test(mediaKey)) throw new Error("Instagram needs a JPG photo or an MP4 video");
-
-  const acct = await prisma.socialAccount.findFirst({ where: { userId, platform: "INSTAGRAM" }, orderBy: { id: "asc" } });
-  if (!acct) throw new Error("No Instagram account connected");
-  if (acct.expiresAt && acct.expiresAt < new Date()) throw new Error("Instagram connection expired. Please reconnect.");
-
-  const token = decrypt(acct.accessToken);
-  const auth = { Authorization: `Bearer ${token}` };
-  const call = async (path: string, body: Record<string, string>) => {
-    const res = await fetch(`https://graph.instagram.com/v21.0/${acct.externalId}/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", ...auth },
-      body: new URLSearchParams(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message ?? "Instagram error");
-    return data;
-  };
-
-  const caption = text.slice(0, 2200);
-  const container = await call(
-    "media",
-    isVideo
-      ? { media_type: "REELS", video_url: publicUrl(mediaKey), caption }
-      : { image_url: publicUrl(mediaKey), caption }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string"
+    )
   );
-
-  if (isVideo) {
-    // Instagram processes a video in the background, so wait until it is ready.
-    const deadline = Date.now() + 50_000;
-    for (;;) {
-      const st = await (
-        await fetch(`https://graph.instagram.com/v21.0/${container.id}?fields=status_code`, { headers: auth })
-      ).json();
-      if (st.status_code === "FINISHED") break;
-      if (st.status_code === "ERROR" || st.status_code === "EXPIRED") throw new Error("Instagram could not process the video");
-      if (Date.now() > deadline) throw new Error("Instagram is still processing the video. Please schedule it again.");
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-  } else {
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-
-  const published = await call("media_publish", { creation_id: container.id });
-  return published.id as string;
 }
-
-const LI_VERSION = process.env.LINKEDIN_API_VERSION ?? "202609";
-
-// LinkedIn treats these characters as formatting, so escape them to show the text as typed.
-const liEscape = (t: string) => t.replace(/[\\|{}@\[\]()<>*_~]/g, (c) => `\\${c}`);
-
-// Posts text, or text with one JPG/PNG photo, to the member's own LinkedIn profile.
-async function postToLinkedIn(userId: string, text: string, mediaKey?: string) {
-  const acct = await prisma.socialAccount.findFirst({ where: { userId, platform: "LINKEDIN" }, orderBy: { id: "asc" } });
-  if (!acct) throw new Error("No LinkedIn account connected");
-  if (acct.expiresAt && acct.expiresAt < new Date()) throw new Error("LinkedIn connection expired. Please reconnect.");
-  if (mediaKey && /\.mp4$/i.test(mediaKey)) throw new Error("LinkedIn video is not supported yet");
-  if (mediaKey && !/\.(jpe?g|png)$/i.test(mediaKey)) throw new Error("LinkedIn needs a JPG or PNG photo");
-
-  const token = decrypt(acct.accessToken);
-  const author = `urn:li:person:${acct.externalId}`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "LinkedIn-Version": LI_VERSION,
-    "X-Restli-Protocol-Version": "2.0.0",
-    "Content-Type": "application/json",
-  };
-
-  let content: { media: { id: string; altText: string } } | undefined;
-  if (mediaKey) {
-    const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
-    });
-    const initData = await init.json().catch(() => ({}));
-    if (!init.ok) throw new Error(initData?.message ?? `LinkedIn image upload failed (${init.status})`);
-    const file = await fetch(publicUrl(mediaKey));
-    if (!file.ok) throw new Error("Could not read the uploaded photo");
-    const put = await fetch(initData.value.uploadUrl, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-      body: await file.blob(),
-    });
-    if (!put.ok) throw new Error(`LinkedIn image upload failed (${put.status})`);
-    content = { media: { id: initData.value.image, altText: text.slice(0, 120) } };
-  }
-
-  const res = await fetch("https://api.linkedin.com/rest/posts", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      author,
-      commentary: liEscape(text).slice(0, 3000),
-      visibility: "PUBLIC",
-      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
-      ...(content ? { content } : {}),
-      lifecycleState: "PUBLISHED",
-      isReshareDisabledByAuthor: false,
-    }),
-  });
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}));
-    throw new Error(d?.message ?? `LinkedIn error ${res.status}`);
-  }
-  return res.headers.get("x-restli-id") ?? "";
-}
-
-
-async function postToYouTube(
-  userId: string,
-  text: string,
-  mediaKey?: string
-) {
-  if (!mediaKey) {
-    throw new Error("YouTube needs an MP4 video");
-  }
-
-  if (!/\.mp4$/i.test(mediaKey)) {
-    throw new Error("YouTube currently supports MP4 videos only");
-  }
-
-  const acct = await prisma.socialAccount.findFirst({
-    where: { userId, platform: "YOUTUBE" },
-    orderBy: { id: "asc" },
-  });
-
-  if (!acct) {
-    throw new Error("No YouTube account connected");
-  }
-
-  if (acct.expiresAt && acct.expiresAt < new Date()) {
-    throw new Error(
-      "YouTube access token expired. Reconnect or refresh the Google token."
-    );
-  }
-
-  const token = decrypt(acct.accessToken);
-
-  // Read the video stored in Cloudflare R2.
-  const file = await fetch(publicUrl(mediaKey));
-
-  if (!file.ok) {
-    throw new Error(
-      `Could not read video from R2 (${file.status}). Check S3_PUBLIC_URL and object access.`
-    );
-  }
-
-  const contentType = file.headers.get("content-type") || "video/mp4";
-  const video = await file.arrayBuffer();
-
-  if (video.byteLength === 0) {
-    throw new Error("The video file is empty");
-  }
-
-  // Start a YouTube resumable upload session.
-  const initUrl = new URL(
-    "https://www.googleapis.com/upload/youtube/v3/videos"
-  );
-
-  initUrl.searchParams.set("uploadType", "resumable");
-  initUrl.searchParams.set("part", "snippet,status");
-
-  const title =
-    text.trim().split(/\r?\n/)[0].slice(0, 100) || "Scheduled video";
-
-  const init = await fetch(initUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=UTF-8",
-      "X-Upload-Content-Length": String(video.byteLength),
-      "X-Upload-Content-Type": contentType,
-    },
-    body: JSON.stringify({
-      snippet: {
-        title,
-        description: text,
-        categoryId: "22",
-      },
-      status: {
-        privacyStatus: "public",
-        selfDeclaredMadeForKids: false,
-      },
-    }),
-  });
-
-  if (!init.ok) {
-    const details = await init.text();
-    throw new Error(
-      `YouTube upload initialization failed (${init.status}): ${details.slice(0, 350)}`
-    );
-  }
-
-  const uploadUrl = init.headers.get("location");
-
-  if (!uploadUrl) {
-    throw new Error("YouTube did not return an upload URL");
-  }
-
-  // Upload the actual MP4 bytes to YouTube.
-  const uploaded = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": contentType,
-    },
-    body: video,
-  });
-
-  const result = await uploaded.json().catch(() => ({}));
-
-  if (!uploaded.ok) {
-    throw new Error(
-      `YouTube video upload failed (${uploaded.status}): ${
-        result?.error?.message || JSON.stringify(result).slice(0, 300)
-      }`
-    );
-  }
-
-  if (!result.id) {
-    throw new Error("YouTube upload completed without returning a video ID");
-  }
-
-  return result.id as string;
-}
-
-
-// export async function publishPost(post: Post): Promise<{ ok: boolean; error?: string }> {
-//   const errors: string[] = [];
-//   for (const platform of post.platforms) {
-//     try {
-//       if (platform === "FACEBOOK") await postToFacebook(post.userId, post.text, post.mediaKeys[0]);
-//       else if (platform === "INSTAGRAM") await postToInstagram(post.userId, post.text, post.mediaKeys[0]);
-//       else if (platform === "LINKEDIN") await postToLinkedIn(post.userId, post.text, post.mediaKeys[0]);
-//       else throw new Error("publishing is not built yet");
-//     } catch (e) {
-//       errors.push(`${platform}: ${e instanceof Error ? e.message : "failed"}`);
-//     }
-//   }
-//   return errors.length ? { ok: false, error: errors.join("; ").slice(0, 500) } : { ok: true };
-// }
-
 
 export async function publishPost(
   post: Post
 ): Promise<{ ok: boolean; error?: string }> {
   const errors: string[] = [];
 
+  const formats = toStringRecord(post.formats);
+  const customTexts = toStringRecord(post.customTexts);
+
+  console.log("========== PUBLISH POST ==========");
+  console.log("Post ID:", post.id);
+  console.log("Platforms:", post.platforms);
+  console.log("Formats:", formats);
+  console.log("==================================");
+
   for (const platform of post.platforms) {
     try {
-      if (platform === "FACEBOOK") {
-        await postToFacebook(
-          post.userId,
-          post.text,
-          post.mediaKeys[0]
-        );
-      } else if (platform === "INSTAGRAM") {
-        await postToInstagram(
-          post.userId,
-          post.text,
-          post.mediaKeys[0]
-        );
-      } else if (platform === "LINKEDIN") {
-        await postToLinkedIn(
-          post.userId,
-          post.text,
-          post.mediaKeys[0]
-        );
-      } else if (platform === "YOUTUBE") {
-        await postToYouTube(
-          post.userId,
-          post.text,
-          post.mediaKeys[0]
-        );
-      } else {
-        throw new Error("Publishing is not built yet");
+      const textToUse = customTexts[platform] || post.text;
+      const formatType = formats[platform] || "POST";
+
+      console.log("========== PUBLISH DEBUG ==========");
+      console.log("Platform:", platform);
+      console.log("Selected Format:", formatType);
+      console.log("Post Formats:", formats);
+      console.log("Media Keys:", post.mediaKeys);
+      console.log("===================================");
+
+      const account = await prisma.socialAccount.findFirst({
+        where: {
+          userId: post.userId,
+          platform,
+        },
+      });
+
+      if (!account) {
+        throw new Error(`No connected ${platform} account found`);
       }
+
+      const accessToken = decrypt(account.accessToken);
+      const accountId = account.externalId;
+
+      const mediaKey = post.mediaKeys?.[0];
+
+      const mediaUrl = mediaKey
+        ? `${process.env.NEXT_PUBLIC_APP_URL || ""}/api/media/${mediaKey}`
+        : null;
+
+      // ==========================================
+      // FACEBOOK
+      // ==========================================
+
+      if (platform === "FACEBOOK") {
+        let endpoint = `https://graph.facebook.com/v18.0/${accountId}/feed`;
+
+        const payload: Record<string, string> = {
+          message: textToUse,
+          access_token: accessToken,
+        };
+
+        if (mediaUrl) {
+          if (
+            formatType === "REEL" ||
+            /\.(mp4|mov|m4v)$/i.test(mediaKey || "")
+          ) {
+            endpoint = `https://graph.facebook.com/v18.0/${accountId}/videos`;
+
+            payload.file_url = mediaUrl;
+            payload.description = textToUse;
+
+            delete payload.message;
+          } else {
+            endpoint = `https://graph.facebook.com/v18.0/${accountId}/photos`;
+            payload.url = mediaUrl;
+          }
+        }
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.id) {
+          throw new Error(
+            data?.error?.message || "Failed to post to Facebook"
+          );
+        }
+
+        console.log("Facebook Published:", data.id);
+      }
+
+      // ==========================================
+      // INSTAGRAM
+      // ==========================================
+
+      else if (platform === "INSTAGRAM") {
+        if (!mediaUrl || !mediaKey) {
+          throw new Error("Instagram needs a photo or video");
+        }
+
+        const isVideo = /\.(mp4|mov|m4v)$/i.test(mediaKey);
+
+        const graphVersion = "v18.0";
+
+        const endpoint = `https://graph.facebook.com/${graphVersion}/${accountId}`;
+
+        console.log("Instagram Format:", formatType);
+        console.log("Instagram Media Type:", isVideo ? "VIDEO" : "IMAGE");
+
+        // Instagram API request helper
+        const apiRequest = async (
+          url: string,
+          params: Record<string, string>
+        ) => {
+          const body = new URLSearchParams({
+            ...params,
+            access_token: accessToken,
+          });
+
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body,
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || data.error) {
+            throw new Error(
+              data?.error?.message || "Instagram API request failed"
+            );
+          }
+
+          return data;
+        };
+
+        // Wait for video processing
+        const waitForProcessing = async (containerId: string) => {
+          for (let attempt = 0; attempt < 30; attempt++) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 10000)
+            );
+
+            const statusUrl = new URL(
+              `https://graph.facebook.com/${graphVersion}/${containerId}`
+            );
+
+            statusUrl.searchParams.set(
+              "fields",
+              "status_code,status"
+            );
+
+            statusUrl.searchParams.set(
+              "access_token",
+              accessToken
+            );
+
+            const statusRes = await fetch(statusUrl.toString());
+            const statusData = await statusRes.json();
+
+            if (!statusRes.ok || statusData.error) {
+              throw new Error(
+                statusData?.error?.message ||
+                  "Failed to check Instagram video status"
+              );
+            }
+
+            console.log(
+              "Instagram Processing:",
+              statusData.status_code
+            );
+
+            if (statusData.status_code === "FINISHED") {
+              return;
+            }
+
+            if (
+              statusData.status_code === "ERROR" ||
+              statusData.status_code === "EXPIRED"
+            ) {
+              throw new Error(
+                statusData.status ||
+                  "Instagram media processing failed"
+              );
+            }
+          }
+
+          throw new Error(
+            "Instagram video processing timed out"
+          );
+        };
+
+        // Publish Instagram container
+        const publishContainer = async (containerId: string) => {
+          const result = await apiRequest(
+            `${endpoint}/media_publish`,
+            {
+              creation_id: containerId,
+            }
+          );
+
+          if (!result.id) {
+            throw new Error("Instagram publishing failed");
+          }
+
+          console.log("Instagram Published ID:", result.id);
+
+          return result.id;
+        };
+
+        // ------------------------------------------
+        // INSTAGRAM STORY
+        // ------------------------------------------
+
+        if (formatType === "STORY") {
+          console.log("Instagram STORY API CALLED");
+
+          const payload: Record<string, string> = {
+            media_type: "STORIES",
+          };
+
+          if (isVideo) {
+            payload.video_url = mediaUrl;
+          } else {
+            payload.image_url = mediaUrl;
+          }
+
+          console.log("Story Media:", isVideo ? "VIDEO" : "IMAGE");
+
+          const container = await apiRequest(
+            `${endpoint}/media`,
+            payload
+          );
+
+          if (!container.id) {
+            throw new Error(
+              "Failed to create Instagram Story container"
+            );
+          }
+
+          console.log("Instagram Story Container:", container.id);
+
+
+          const info = await fetch(
+  `https://graph.facebook.com/${graphVersion}/${container.id}?fields=status_code,media_type&access_token=${accessToken}`
+).then((r) => r.json());
+console.log("Container info:", info);
+
+// Wait for video processing
+if (isVideo) {
+  await waitForProcessing(container.id);
+}
+
+await publishContainer(container.id);
+
+          // Wait for video processing
+          if (isVideo) {
+            await waitForProcessing(container.id);
+          }
+
+          await publishContainer(container.id);
+
+          console.log("Instagram STORY published successfully");
+        }
+
+        // ------------------------------------------
+        // INSTAGRAM REEL
+        // ------------------------------------------
+
+        else if (formatType === "REEL") {
+          console.log("Instagram REEL API CALLED");
+
+          if (!isVideo) {
+            throw new Error(
+              "Instagram Reel requires a video file"
+            );
+          }
+
+          const container = await apiRequest(
+            `${endpoint}/media`,
+            {
+              media_type: "REELS",
+              video_url: mediaUrl,
+              caption: textToUse,
+            }
+          );
+
+          if (!container.id) {
+            throw new Error(
+              "Failed to create Instagram Reel container"
+            );
+          }
+
+          await waitForProcessing(container.id);
+
+          await publishContainer(container.id);
+
+          console.log("Instagram REEL published successfully");
+        }
+
+        // ------------------------------------------
+        // INSTAGRAM NORMAL POST
+        // ------------------------------------------
+
+        else if (formatType === "POST") {
+          console.log("Instagram FEED POST API CALLED");
+
+          const payload: Record<string, string> = {
+            caption: textToUse,
+          };
+
+          if (isVideo) {
+            payload.media_type = "REELS";
+            payload.video_url = mediaUrl;
+          } else {
+            payload.image_url = mediaUrl;
+          }
+
+          const container = await apiRequest(
+            `${endpoint}/media`,
+            payload
+          );
+
+          if (!container.id) {
+            throw new Error(
+              "Failed to create Instagram Post container"
+            );
+          }
+
+          if (isVideo) {
+            await waitForProcessing(container.id);
+          }
+
+          await publishContainer(container.id);
+
+          console.log("Instagram POST published successfully");
+        }
+
+        else {
+          throw new Error(
+            `Unsupported Instagram format: ${formatType}`
+          );
+        }
+      }
+
+      // ==========================================
+      // OTHER PLATFORMS
+      // ==========================================
+
+      else {
+        // LinkedIn / YouTube / WhatsApp existing placeholders
+        console.log(`${platform} publishing is not implemented yet`);
+        throw new Error(
+          `${platform} publishing is not implemented yet`
+        );
+      }
+
     } catch (e) {
-      errors.push(
-        `${platform}: ${e instanceof Error ? e.message : "failed"}`
-      );
+      const message =
+        e instanceof Error ? e.message : "Unknown publishing error";
+
+      console.error(`${platform} Publish Error:`, message);
+
+      errors.push(`${platform}: ${message}`);
     }
   }
 
   return errors.length
-    ? { ok: false, error: errors.join("; ").slice(0, 500) }
-    : { ok: true };
+    ? {
+        ok: false,
+        error: errors.join("; ").slice(0, 500),
+      }
+    : {
+        ok: true,
+      };
 }
-

@@ -37,13 +37,16 @@
 
 
 
+
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getUserId } from "@/lib/user";
 
+// Zod schema ને અપડેટ કર્યો જેથી customTexts, formats અને multi-media (mediaKeys) હેન્ડલ થઈ શકે
 const schema = z.object({
-  text: z.string().min(1).max(3000),
+  text: z.string().max(3000).optional(),
+  customTexts: z.record(z.string(), z.string()).optional(),
   platforms: z
     .array(
       z.enum([
@@ -56,7 +59,8 @@ const schema = z.object({
     )
     .min(1),
   scheduledAt: z.coerce.date(),
-  mediaKeys: z.array(z.string()).max(1).default([]),
+  mediaKeys: z.array(z.string()).default([]),
+  formats: z.record(z.string(), z.string()).optional(), // "POST", "REEL", "STORY" માટે
 });
 
 export async function GET(req: NextRequest) {
@@ -100,10 +104,11 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = await getUserId();
+    const data = body.data;
 
     // A user may only attach files they uploaded themselves.
     if (
-      !body.data.mediaKeys.every((key) =>
+      !data.mediaKeys.every((key) =>
         key.startsWith(`${userId}/`)
       )
     ) {
@@ -113,12 +118,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const post = await prisma.post.create({
-      data: {
-        ...body.data,
-        userId,
-      },
-    });
+    // ડેટાબેઝમાં પોસ્ટ સેવ કરવી (જ્યાં formats અને customTexts પણ સેવ થશે)
+  const post = await prisma.post.create({
+  data: {
+    userId,
+    platforms: data.platforms,
+    scheduledAt: data.scheduledAt,
+    text: data.text || "",
+    mediaKeys: data.mediaKeys,
+
+    formats: data.formats ?? {},
+    customTexts: data.customTexts ?? {},
+  },
+});
 
     return NextResponse.json(post, { status: 201 });
   } catch (error) {
