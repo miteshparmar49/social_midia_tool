@@ -119,13 +119,30 @@ export async function GET(
   const state = randomBytes(32).toString("hex");
   const url = new URL(o.authUrl);
 
-  url.search = new URLSearchParams({
-    client_id: o.id,
-    redirect_uri: redirectUri,
-    scope: o.scope,
-    response_type: "code",
-    state,
-  }).toString();
+  // url.search = new URLSearchParams({
+  //   client_id: o.id,
+  //   redirect_uri: redirectUri,
+  //   scope: o.scope,
+  //   response_type: "code",
+  //   state,
+  // }).toString();
+
+
+  const authParams = new URLSearchParams({
+  client_id: o.id,
+  redirect_uri: redirectUri,
+  scope: o.scope,
+  response_type: "code",
+  state,
+});
+
+// Google gives a refresh token only with these two options
+if (platform === "youtube") {
+  authParams.set("access_type", "offline");
+  authParams.set("prompt", "consent");
+}
+
+url.search = authParams.toString();
 
   const res = NextResponse.redirect(url);
 

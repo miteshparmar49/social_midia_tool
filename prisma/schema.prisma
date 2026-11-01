@@ -20,15 +20,16 @@ model User {
 }
 
 model SocialAccount {
-  id          String    @id @default(cuid())
-  userId      String
-  platform    Platform
-  accountType String    @default("PERSONAL")
-  externalId  String
-  handle      String
-  accessToken String
-  expiresAt   DateTime?
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  userId       String
+  platform     Platform
+  accountType  String    @default("PERSONAL")
+  externalId   String
+  handle       String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, platform, externalId])
 }

@@ -502,13 +502,24 @@ async function handle(req: NextRequest, { params }: Ctx) {
       );
     }
 
+    // const data = {
+    //   handle: String(channel.snippet?.title ?? externalId),
+    //   accessToken: encrypt(token.access_token),
+    //   expiresAt: token.expires_in
+    //     ? new Date(Date.now() + token.expires_in * 1000)
+    //     : null,
+    // };
+
     const data = {
-      handle: String(channel.snippet?.title ?? externalId),
-      accessToken: encrypt(token.access_token),
-      expiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-    };
+  handle: String(channel.snippet?.title ?? externalId),
+  accessToken: encrypt(token.access_token),
+  ...(token.refresh_token
+    ? { refreshToken: encrypt(token.refresh_token) }
+    : {}),
+  expiresAt: token.expires_in
+    ? new Date(Date.now() + token.expires_in * 1000)
+    : null,
+};
 
     await prisma.socialAccount.upsert({
       where: {

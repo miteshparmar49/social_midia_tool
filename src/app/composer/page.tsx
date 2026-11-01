@@ -1,284 +1,6 @@
-// "use client";
-
-// import { useEffect, useState, FormEvent, ChangeEvent } from "react";
-// import Link from "next/link";
-// import { useRouter } from "next/navigation";
-// import PostPreview from "@/components/PostPreview";
-
-// type PlatformKey = "INSTAGRAM" | "FACEBOOK" | "LINKEDIN" | "WHATSAPP" | "YOUTUBE";
-
-// const PLATFORMS: {
-//   key: PlatformKey;
-//   name: string;
-//   color: string;
-//   locked?: string;
-// }[] = [
-//   { key: "FACEBOOK", name: "Facebook", color: "#1877F2" },
-//   { key: "LINKEDIN", name: "LinkedIn", color: "#0A66C2" },
-//   { key: "WHATSAPP", name: "WhatsApp", color: "#1FA855", locked: "WhatsApp publishing is coming soon." },
-//   { key: "INSTAGRAM", name: "Instagram", color: "#C13584" },
-//   { key: "YOUTUBE", name: "YouTube", color: "#FF0000" },
-// ];
-
-// const MB = 1024 * 1024;
-// const TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4"];
-
-// function toLocalInput(d: Date) {
-//   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-// }
-
-// // Instagram needs a JPG shaped 4:5 to 1.91:1. LinkedIn takes JPG or PNG. Other photo types become JPG.
-// async function prepareImage(f: File, forInstagram: boolean): Promise<File> {
-//   const bmp = await createImageBitmap(f);
-//   if (forInstagram) {
-//     const ratio = bmp.width / bmp.height;
-//     if (ratio < 0.8 || ratio > 1.91) {
-//       throw new Error("Instagram needs a photo between 4:5 (portrait) and 1.91:1 (landscape) shape");
-//     }
-//   }
-//   const ok = f.type === "image/jpeg" || (!forInstagram && f.type === "image/png");
-//   if (ok) return f;
-//   const canvas = document.createElement("canvas");
-//   canvas.width = bmp.width;
-//   canvas.height = bmp.height;
-//   const ctx = canvas.getContext("2d")!;
-//   ctx.fillStyle = "#ffffff"; // transparency becomes white
-//   ctx.fillRect(0, 0, canvas.width, canvas.height);
-//   ctx.drawImage(bmp, 0, 0);
-//   const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.92));
-//   if (!blob) throw new Error("Could not convert the photo to JPG");
-//   return new File([blob], f.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
-// }
-
-// export default function ComposerPage() {
-//   const router = useRouter();
-//   const [connected, setConnected] = useState<PlatformKey[] | null>(null);
-//   const [handles, setHandles] = useState<Record<string, string>>({});
-//   const [selected, setSelected] = useState<PlatformKey[]>([]);
-//   const [text, setText] = useState("");
-//   const [when, setWhen] = useState("");
-//   const [file, setFile] = useState<File | null>(null);
-//   const [preview, setPreview] = useState<string | null>(null);
-//   const [error, setError] = useState("");
-//   const [status, setStatus] = useState("");
-//   const [busy, setBusy] = useState(false);
-
-//   useEffect(() => {
-//     const fallback = new Date(Date.now() + 60 * 60 * 1000);
-//     const q = new URLSearchParams(window.location.search).get("date");
-//     const picked = q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? new Date(`${q}T10:00`) : fallback;
-//     setWhen(toLocalInput(picked.getTime() > Date.now() ? picked : fallback));
-//     fetch("/api/accounts")
-//       .then((r) => r.json())
-//       .then((rows: { platform: PlatformKey; handle: string }[]) => {
-//         setConnected(rows.map((r) => r.platform));
-//         setHandles(Object.fromEntries(rows.map((r) => [r.platform, r.handle])));
-//       })
-//       .catch(() => setConnected([]));
-//   }, []);
-
-//   useEffect(() => {
-//     if (!file) return setPreview(null);
-//     const url = URL.createObjectURL(file);
-//     setPreview(url);
-//     return () => URL.revokeObjectURL(url);
-//   }, [file]);
-
-//   function toggle(key: PlatformKey) {
-//     setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]));
-//   }
-
-//   function onFile(e: ChangeEvent<HTMLInputElement>) {
-//     const f = e.target.files?.[0];
-//     e.target.value = "";
-//     if (!f) return;
-//     if (!TYPES.includes(f.type)) return setError("Use a JPG, PNG, WebP or MP4 file");
-//     if (f.size > (f.type.startsWith("video/") ? 100 * MB : 10 * MB)) {
-//       return setError("Photos can be up to 10 MB and videos up to 100 MB");
-//     }
-//     setError("");
-//     setFile(f);
-//   }
-
-//   async function onSubmit(e: FormEvent) {
-//     e.preventDefault();
-//     setError("");
-//     if (!text.trim()) return setError("Write something to post");
-//     if (!selected.length) return setError("Choose at least one platform");
-//     if (selected.includes("INSTAGRAM") && !file) return setError("Instagram needs a photo or video");
-//     if (selected.includes("YOUTUBE") && (!file || file.type !== "video/mp4")) {
-//       return setError("YouTube માટે MP4 video પસંદ કરો");
-//     }
-//     if (selected.includes("LINKEDIN") && file?.type.startsWith("video/")) {
-//       return setError("LinkedIn video is not supported yet. Remove the video or untick LinkedIn.");
-//     }
-//     const date = new Date(when);
-//     if (isNaN(date.getTime()) || date.getTime() < Date.now()) return setError("Pick a time in the future");
-
-//     setBusy(true);
-//     try {
-//       let mediaKeys: string[] = [];
-//       if (file) {
-//         setStatus("Preparing file");
-//         const needsPrep = file.type.startsWith("image/") && (selected.includes("INSTAGRAM") || selected.includes("LINKEDIN"));
-//         const upload = needsPrep ? await prepareImage(file, selected.includes("INSTAGRAM")) : file;
-//         setStatus("Uploading file");
-//         const r = await fetch("/api/upload", {
-//           method: "POST",
-//           headers: { "Content-Type": "application/json" },
-//           body: JSON.stringify({ filename: upload.name, contentType: upload.type, size: upload.size }),
-//         });
-//         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Could not start the upload");
-//         const { url, key } = await r.json();
-//         const put = await fetch(url, { method: "PUT", headers: { "Content-Type": upload.type }, body: upload });
-//         if (!put.ok) throw new Error("Upload failed. Check the storage and CORS settings.");
-//         mediaKeys = [key];
-//       }
-//       setStatus("Saving post");
-//       const res = await fetch("/api/posts", {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify({ text: text.trim(), platforms: selected, scheduledAt: date.toISOString(), mediaKeys }),
-//       });
-//       if (!res.ok) throw new Error("Could not save the post. Please try again.");
-//       router.push("/dashboard");
-//     } catch (err) {
-//       setError(err instanceof Error ? err.message : "Something went wrong");
-//     } finally {
-//       setBusy(false);
-//       setStatus("");
-//     }
-//   }
-
-//   const field =
-//     "w-full rounded-lg border border-slate-300 px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600";
-
-//   return (
-//     <div className="max-w-6xl">
-//       <h1 className="text-2xl font-semibold tracking-tight">New post</h1>
-//       <p className="mb-6 text-sm text-slate-500">Write once, schedule for later</p>
-
-//       <div className="grid gap-6 lg:grid-cols-[minmax(0,640px)_minmax(0,1fr)]">
-//         <form onSubmit={onSubmit} className="space-y-6 rounded-xl border border-slate-200 bg-white p-5">
-//           <div>
-//             <label htmlFor="text" className="mb-1 block text-sm font-medium">Post text</label>
-//             <textarea
-//               id="text"
-//               rows={6}
-//               maxLength={3000}
-//               value={text}
-//               onChange={(e) => setText(e.target.value)}
-//               className={field}
-//               placeholder="What do you want to share?"
-//             />
-//             <p className="mt-1 text-right text-xs text-slate-500">{text.length} / 3000</p>
-//           </div>
-
-//           <div>
-//             <p className="mb-1 text-sm font-medium">Photo or video (optional)</p>
-//             {file && preview ? (
-//               <div className="rounded-lg border border-slate-200 p-3">
-//                 {file.type.startsWith("video/") ? (
-//                   <video src={preview} controls className="max-h-64 w-full rounded-md bg-black" />
-//                 ) : (
-//                   // eslint-disable-next-line @next/next/no-img-element
-//                   <img src={preview} alt="Selected file preview" className="max-h-64 rounded-md" />
-//                 )}
-//                 <div className="mt-2 flex items-center justify-between text-sm">
-//                   <span className="truncate text-slate-600">{file.name} ({(file.size / MB).toFixed(1)} MB)</span>
-//                   <button type="button" onClick={() => setFile(null)} className="font-medium text-red-600 hover:underline">
-//                     Remove
-//                   </button>
-//                 </div>
-//               </div>
-//             ) : (
-//               <label className="flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-600 hover:border-indigo-400 hover:bg-indigo-50/40">
-//                 <span className="font-medium text-indigo-700">Choose a file</span>
-//                 <span>JPG, PNG, WebP up to 10 MB, or MP4 up to 100 MB</span>
-//                 <input type="file" accept={TYPES.join(",")} onChange={onFile} className="sr-only" />
-//               </label>
-//             )}
-//           </div>
-
-//           <fieldset>
-//             <legend className="mb-2 text-sm font-medium">Post to</legend>
-//             {connected === null && <p className="text-sm text-slate-600">Loading accounts</p>}
-//             {connected && connected.length === 0 && (
-//               <p className="text-sm text-slate-600">
-//                 No accounts connected yet.{" "}
-//                 <Link href="/dashboard" className="font-medium underline">Connect one on the dashboard</Link>
-//               </p>
-//             )}
-//             <div className="grid gap-2 sm:grid-cols-2">
-//               {PLATFORMS.filter((p) => connected?.includes(p.key)).map((p) => (
-//                 <label
-//                   key={p.key}
-//                   className={`flex items-start gap-3 rounded-lg border border-slate-200 p-3 ${p.locked ? "opacity-60" : "cursor-pointer"}`}
-//                 >
-//                   <input
-//                     type="checkbox"
-//                     disabled={!!p.locked}
-//                     checked={selected.includes(p.key)}
-//                     onChange={() => toggle(p.key)}
-//                     className="mt-1 h-4 w-4"
-//                   />
-//                   <span>
-//                     <span className="flex items-center gap-2 font-medium">
-//                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-//                       {p.name}
-//                     </span>
-//                     {p.locked && <span className="block text-xs text-slate-600">{p.locked}</span>}
-//                   </span>
-//                 </label>
-//               ))}
-//             </div>
-//           </fieldset>
-
-//           <div>
-//             <label htmlFor="when" className="mb-1 block text-sm font-medium">Schedule for</label>
-//             <input
-//               id="when"
-//               type="datetime-local"
-//               value={when}
-//               min={when ? toLocalInput(new Date()) : undefined}
-//               onChange={(e) => setWhen(e.target.value)}
-//               className={field}
-//             />
-//           </div>
-
-//           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-
-//           <button disabled={busy} className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
-//             {busy ? status || "Please wait" : "Schedule post"}
-//           </button>
-//         </form>
-
-//         <aside className="lg:sticky lg:top-6 lg:self-start">
-//           <PostPreview
-//             text={text}
-//             platforms={selected}
-//             mediaUrl={preview}
-//             mediaType={file?.type ?? null}
-//             handles={handles}
-//             when={when}
-//           />
-//         </aside>
-//       </div>
-//     </div>
-//   );
-// }
-
-
-
-
-
-
-
-
 "use client";
 
-import { useEffect, useState, FormEvent, ChangeEvent } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState, FormEvent, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import PostPreview from "@/components/PostPreview";
 
@@ -299,18 +21,219 @@ const PLATFORMS: {
 ];
 
 const MB = 1024 * 1024;
-const TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4"];
+const IMG = ["image/jpeg", "image/png", "image/webp"];
+const VID = ["video/mp4"];
+
+// ---------------------------------------------------------------
+// Platform + format wise rules (what can be added, recommended size)
+// ---------------------------------------------------------------
+type Rules = {
+  types: string[]; // allowed mime types
+  multiple: boolean;
+  max: number;
+  label: string;
+  size: string; // recommended size
+  note: string;
+  ratio?: { min: number; max: number; label: string }; // width / height
+};
+
+const RATIO_9_16 = { min: 0.5, max: 0.7, label: "9:16" };
+
+function getRules(p: PlatformKey, fmt: PostFormat): Rules {
+  switch (p) {
+    case "INSTAGRAM":
+      if (fmt === "REEL") {
+        return {
+          types: VID,
+          multiple: false,
+          max: 1,
+          label: "Reel: 1 MP4 video only",
+          size: "1080 × 1920 px (9:16 vertical)",
+          note: "MP4 (H.264 + AAC), 3 to 90 seconds, max 100 MB.",
+          ratio: RATIO_9_16,
+        };
+      }
+      if (fmt === "STORY") {
+        return {
+          types: [...IMG, ...VID],
+          multiple: false,
+          max: 1,
+          label: "Story: 1 photo or 1 video",
+          size: "1080 × 1920 px (9:16 vertical)",
+          note: "Photo JPG (max 10 MB) or MP4 video (max 60 seconds). Captions and carousels are not supported in Stories.",
+          ratio: RATIO_9_16,
+        };
+      }
+      return {
+        types: [...IMG, ...VID],
+        multiple: true,
+        max: 10,
+        label: "Post: 1 file or Carousel (2 to 10)",
+        size: "1080 × 1080 px (1:1) or 1080 × 1350 px (4:5)",
+        note: "Ratio between 4:5 and 1.91:1. Photo JPG (max 10 MB), video MP4 (max 100 MB). Keep all carousel images in the same ratio.",
+        ratio: { min: 0.8, max: 1.91, label: "4:5 to 1.91:1" },
+      };
+
+    case "FACEBOOK":
+      if (fmt === "REEL") {
+        return {
+          types: VID,
+          multiple: false,
+          max: 1,
+          label: "Reel: 1 MP4 video only",
+          size: "1080 × 1920 px (9:16 vertical)",
+          note: "MP4, 3 to 90 seconds, max 100 MB.",
+          ratio: RATIO_9_16,
+        };
+      }
+      if (fmt === "STORY") {
+        return {
+          types: [...IMG, ...VID],
+          multiple: false,
+          max: 1,
+          label: "Story: 1 photo or 1 video",
+          size: "1080 × 1920 px (9:16 vertical)",
+          note: "Photo (max 10 MB) or MP4 video (max 100 MB).",
+          ratio: RATIO_9_16,
+        };
+      }
+      return {
+        types: [...IMG, ...VID],
+        multiple: false,
+        max: 1,
+        label: "Post: 1 photo or 1 video",
+        size: "1200 × 630 px (1.91:1) or 1080 × 1080 px (1:1)",
+        note: "Photo max 10 MB, video max 100 MB. Facebook currently supports only 1 media.",
+      };
+
+    case "LINKEDIN":
+      return {
+        types: IMG,
+        multiple: true,
+        max: 9,
+        label: "Post: photos (max 9)",
+        size: "1200 × 627 px (1.91:1)",
+        note: "JPG or PNG, max 10 MB each. Video is not supported yet.",
+      };
+
+    case "YOUTUBE":
+      return {
+        types: VID,
+        multiple: false,
+        max: 1,
+        label: "Video: 1 MP4 only",
+        size: "1920 × 1080 px (16:9)",
+        note: "MP4, max 100 MB. For Shorts use 1080 × 1920 px (9:16) and under 60 seconds.",
+      };
+
+    default:
+      return {
+        types: [...IMG, ...VID],
+        multiple: false,
+        max: 1,
+        label: "1 photo or video",
+        size: "1080 × 1080 px (1:1)",
+        note: "Photo max 10 MB, video max 100 MB.",
+      };
+  }
+}
 
 function toLocalInput(d: Date) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+// ---------------------------------------------------------------
+// Small components
+// ---------------------------------------------------------------
+function SizeGuide({ name, rules }: { name?: string; rules: Rules }) {
+  return (
+    <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-2.5 text-xs text-slate-700 space-y-0.5">
+      <p className="font-semibold text-indigo-800">
+        {name ? `${name} · ` : ""}
+        {rules.label}
+      </p>
+      <p>
+        Recommended size: <span className="font-medium">{rules.size}</span>
+      </p>
+      <p>{rules.note}</p>
+    </div>
+  );
+}
+
+function MediaThumb({
+  file,
+  onRemove,
+  ratio,
+  heightClass = "h-24",
+}: {
+  file: File;
+  onRemove: () => void;
+  ratio?: Rules["ratio"];
+  heightClass?: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
+  const isVideo = file.type.startsWith("video/");
+
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    setDim(null);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+
+  const r = dim ? dim.w / dim.h : null;
+  const mismatch = !!(ratio && r !== null && (r < ratio.min || r > ratio.max));
+
+  return (
+    <div className="relative rounded-lg border border-slate-200 bg-white p-1.5">
+      {url &&
+        (isVideo ? (
+          <video
+            src={url}
+            className={`${heightClass} w-full rounded object-cover`}
+            onLoadedMetadata={(e) =>
+              setDim({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight })
+            }
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt="Preview"
+            className={`${heightClass} w-full rounded object-cover`}
+            onLoad={(e) =>
+              setDim({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
+            }
+          />
+        ))}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs text-white"
+      >
+        ×
+      </button>
+      <p className="mt-1 truncate text-[10px] text-slate-600">
+        {dim ? `${dim.w}×${dim.h} · ` : ""}
+        {(file.size / MB).toFixed(1)} MB
+      </p>
+      {mismatch && ratio && (
+        <p className="text-[10px] font-medium text-amber-700">Recommended ratio: {ratio.label}</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------
 export default function ComposerPage() {
   const router = useRouter();
   const [connected, setConnected] = useState<PlatformKey[] | null>(null);
   const [handles, setHandles] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<PlatformKey[]>([]);
-  
+
   const [isCustomized, setIsCustomized] = useState(false);
   const [text, setText] = useState("");
   const [customTexts, setCustomTexts] = useState<Record<PlatformKey, string>>({
@@ -338,6 +261,7 @@ export default function ComposerPage() {
     YOUTUBE: "POST",
   });
 
+  const [notices, setNotices] = useState<Partial<Record<PlatformKey, string>>>({});
   const [when, setWhen] = useState("");
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -357,41 +281,98 @@ export default function ComposerPage() {
       .catch(() => setConnected([]));
   }, []);
 
+  // Rules used in the normal (non-customized) mode
+  const globalRules = useMemo(() => {
+    const p: PlatformKey = selected.includes("INSTAGRAM")
+      ? "INSTAGRAM"
+      : (selected.find((k) => k !== "WHATSAPP") ?? "INSTAGRAM");
+    return getRules(p, "POST");
+  }, [selected]);
+
+  // Preview URL for the first global file (revoked when it changes)
+  const globalPreviewUrl = useMemo(
+    () => (globalFiles[0] ? URL.createObjectURL(globalFiles[0]) : null),
+    [globalFiles]
+  );
+  useEffect(() => {
+    return () => {
+      if (globalPreviewUrl) URL.revokeObjectURL(globalPreviewUrl);
+    };
+  }, [globalPreviewUrl]);
+
   function toggle(key: PlatformKey) {
     setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]));
   }
 
-  function handleFilesChange(e: ChangeEvent<HTMLInputElement>, platKey?: PlatformKey, isFacebook = false) {
-    const chosenFiles = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (!chosenFiles.length) return;
+  // When the format changes, keep only the files that are allowed for it
+  function changeFormat(platKey: PlatformKey, fmt: PostFormat) {
+    setError("");
+    setFormats((prev) => ({ ...prev, [platKey]: fmt }));
 
-    for (const f of chosenFiles) {
-      if (!TYPES.includes(f.type)) return setError("Use a JPG, PNG, WebP or MP4 file");
+    const rules = getRules(platKey, fmt);
+    const current = customFiles[platKey];
+    let next = current.filter((f) => rules.types.includes(f.type));
+    if (!rules.multiple) next = next.slice(0, 1);
+
+    if (next.length !== current.length) {
+      setCustomFiles((prev) => ({ ...prev, [platKey]: next }));
+      setNotices((prev) => ({
+        ...prev,
+        [platKey]:
+          fmt === "REEL"
+            ? "Reels support video only, so the photos were removed. Please add an MP4 video."
+            : "This format supports only 1 file, so the extra files were removed.",
+      }));
+    } else {
+      setNotices((prev) => ({ ...prev, [platKey]: undefined }));
     }
+  }
 
-    // Facebook માટે માત્ર 1 જ ઇમેજ Allow કરવી (Rule 4)
-    if (isFacebook || (!isCustomized && selected.includes("FACEBOOK") && !selected.includes("INSTAGRAM"))) {
-      if (chosenFiles[0].type.startsWith("image/")) {
-        if (isCustomized && platKey) {
-          setCustomFiles((prev) => ({ ...prev, [platKey]: [chosenFiles[0]] }));
-        } else {
-          setGlobalFiles([chosenFiles[0]]);
-        }
-        return;
+  function handleFilesChange(e: ChangeEvent<HTMLInputElement>, platKey?: PlatformKey) {
+    const chosen = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!chosen.length) return;
+
+    const rules = platKey ? getRules(platKey, formats[platKey]) : globalRules;
+
+    for (const f of chosen) {
+      if (!rules.types.includes(f.type)) {
+        return setError(
+          rules.types.every((t) => t.startsWith("video/"))
+            ? "This format accepts MP4 video only"
+            : rules.types.every((t) => t.startsWith("image/"))
+              ? "This format accepts JPG, PNG or WebP photos only"
+              : "Use a JPG, PNG, WebP or MP4 file"
+        );
+      }
+      if (f.size > (f.type.startsWith("video/") ? 100 * MB : 10 * MB)) {
+        return setError("Photos can be up to 10 MB and videos up to 100 MB");
       }
     }
 
     setError("");
-    if (isCustomized && platKey) {
-      setCustomFiles((prev) => ({ ...prev, [platKey]: [...prev[platKey], ...chosenFiles] }));
+    if (platKey) setNotices((prev) => ({ ...prev, [platKey]: undefined }));
+
+    const apply = (current: File[]): File[] | null => {
+      if (!rules.multiple) return [chosen[0]]; // single media: replace
+      if (current.length + chosen.length > rules.max) {
+        setError(`You can add a maximum of ${rules.max} files`);
+        return null;
+      }
+      return [...current, ...chosen];
+    };
+
+    if (platKey) {
+      const next = apply(customFiles[platKey]);
+      if (next) setCustomFiles((prev) => ({ ...prev, [platKey]: next }));
     } else {
-      setGlobalFiles((prev) => [...prev, ...chosenFiles]);
+      const next = apply(globalFiles);
+      if (next) setGlobalFiles(next);
     }
   }
 
   function removeFile(index: number, platKey?: PlatformKey) {
-    if (isCustomized && platKey) {
+    if (platKey) {
       setCustomFiles((prev) => ({
         ...prev,
         [platKey]: prev[platKey].filter((_, i) => i !== index),
@@ -401,7 +382,7 @@ export default function ComposerPage() {
     }
   }
 
- async function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     if (!isCustomized && !text.trim()) return setError("Write something to post");
@@ -413,39 +394,60 @@ export default function ComposerPage() {
     const date = new Date(when);
     if (isNaN(date.getTime()) || date.getTime() < Date.now()) return setError("Pick a time in the future");
 
+    // Decide which files to upload
+    let filesToUpload: File[] = [];
+    if (isCustomized) {
+      // Prefer Instagram's files (carousel), otherwise the first platform that has files
+      const sourcePlatform: PlatformKey = selected.includes("INSTAGRAM")
+        ? "INSTAGRAM"
+        : (selected.find((p) => customFiles[p].length > 0) ?? selected[0]);
+      filesToUpload = customFiles[sourcePlatform] ?? [];
+    } else {
+      filesToUpload = globalFiles;
+    }
+
+    if (selected.includes("INSTAGRAM")) {
+      const igFormat = isCustomized ? formats.INSTAGRAM : "POST";
+      if (filesToUpload.length === 0) {
+        return setError(
+          igFormat === "REEL"
+            ? "Add an MP4 video for the Instagram Reel"
+            : "Instagram needs a photo or video for Post, Reel, or Story"
+        );
+      }
+      if (igFormat === "REEL" && !filesToUpload[0].type.startsWith("video/")) {
+        return setError("Instagram Reel requires an MP4 video");
+      }
+    }
+    if (selected.includes("YOUTUBE") && !filesToUpload.some((f) => f.type === "video/mp4")) {
+      return setError("Choose an MP4 video for YouTube");
+    }
+
     setBusy(true);
     try {
-      let mediaKeys: string[] = [];
+      const mediaKeys: string[] = [];
 
-      // ફાઇલ નક્કી કરવી: જો કસ્ટમાઇઝ્ડ હોય તો ઇન્સ્ટાગ્રામ કે સિલેક્ટ કરેલા પ્લેટફોર્મની પહેલી ફાઇલ લો, નહીંતર ગ્લોબલ
-      let fileToUpload: File | null = null;
-      if (isCustomized) {
-        // જે પ્લેટફોર્મ પહેલું સિલેક્ટ કર્યું હોય તેની ફાઇલ લો
-        const firstActivePlatform = selected[0];
-        if (customFiles[firstActivePlatform] && customFiles[firstActivePlatform].length > 0) {
-          fileToUpload = customFiles[firstActivePlatform][0];
-        }
-      } else {
-        fileToUpload = globalFiles[0] || null;
-      }
+      // Upload ALL selected files, one by one
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const f = filesToUpload[i];
+        setStatus(`Uploading file ${i + 1} of ${filesToUpload.length}`);
 
-      if (fileToUpload) {
-        setStatus("Uploading file");
         const r = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: fileToUpload.name, contentType: fileToUpload.type, size: fileToUpload.size }),
+          body: JSON.stringify({ filename: f.name, contentType: f.type, size: f.size }),
         });
         if (!r.ok) throw new Error("Could not start the upload");
-        const { url, key } = await r.json();
-        const putRes = await fetch(url, { method: "PUT", headers: { "Content-Type": fileToUpload.type }, body: fileToUpload });
-        if (!putRes.ok) throw new Error("Failed to upload file to storage");
-        mediaKeys = [key];
-      }
 
-      // જો Instagram કે Facebook પર Story સિલેક્ટ કરી હોય, તો mediaKeys જવું જ જોઈએ
-      if (selected.includes("INSTAGRAM") && mediaKeys.length === 0) {
-        return setError("Instagram needs a photo or video for Post, Reel, or Story");
+        const { url, key } = await r.json();
+        const putRes = await fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": f.type },
+          body: f,
+        });
+        if (!putRes.ok) throw new Error("Failed to upload file to storage");
+
+        mediaKeys.push(key);
       }
 
       setStatus("Saving post");
@@ -468,7 +470,8 @@ export default function ComposerPage() {
     }
   }
 
-  const field = "w-full rounded-lg border border-slate-300 px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600";
+  const field =
+    "w-full rounded-lg border border-slate-300 px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600";
 
   return (
     <div className="max-w-6xl">
@@ -477,13 +480,21 @@ export default function ComposerPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,640px)_minmax(0,1fr)]">
         <form onSubmit={onSubmit} className="space-y-6 rounded-xl border border-slate-200 bg-white p-5">
-          
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Post to</legend>
             <div className="grid gap-2 sm:grid-cols-2">
               {PLATFORMS.filter((p) => connected?.includes(p.key)).map((p) => (
-                <label key={p.key} className={`flex items-start gap-3 rounded-lg border border-slate-200 p-3 ${p.locked ? "opacity-60" : "cursor-pointer"}`}>
-                  <input type="checkbox" disabled={!!p.locked} checked={selected.includes(p.key)} onChange={() => toggle(p.key)} className="mt-1 h-4 w-4" />
+                <label
+                  key={p.key}
+                  className={`flex items-start gap-3 rounded-lg border border-slate-200 p-3 ${p.locked ? "opacity-60" : "cursor-pointer"}`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!!p.locked}
+                    checked={selected.includes(p.key)}
+                    onChange={() => toggle(p.key)}
+                    className="mt-1 h-4 w-4"
+                  />
                   <span>
                     <span className="flex items-center gap-2 font-medium">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
@@ -496,8 +507,14 @@ export default function ComposerPage() {
           </fieldset>
 
           <div className="flex items-center gap-2 pt-2">
-            <input type="checkbox" id="customizeToggle" checked={isCustomized} onChange={(e) => setIsCustomized(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
-            <label htmlFor="customizeToggle" className="text-sm font-medium text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              id="customizeToggle"
+              checked={isCustomized}
+              onChange={(e) => setIsCustomized(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+            />
+            <label htmlFor="customizeToggle" className="cursor-pointer text-sm font-medium text-slate-700">
               Customize for each network (દરેક નેટવર્ક માટે અલગ લખો અને ફોર્મેટ/મીડિયા સેટ કરો)
             </label>
           </div>
@@ -506,27 +523,53 @@ export default function ComposerPage() {
             <>
               <div>
                 <label htmlFor="text" className="mb-1 block text-sm font-medium">Post text</label>
-                <textarea id="text" rows={5} maxLength={3000} value={text} onChange={(e) => setText(e.target.value)} className={field} placeholder="What do you want to share?" />
+                <textarea
+                  id="text"
+                  rows={5}
+                  maxLength={3000}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className={field}
+                  placeholder="What do you want to share?"
+                />
               </div>
 
               <div>
-                <p className="mb-1 text-sm font-medium">Photos or video (Facebook: single image, Instagram: carousel supported)</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                <p className="mb-1 text-sm font-medium">Photos or video</p>
+
+                {selected.filter((p) => p !== "WHATSAPP").length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    {selected
+                      .filter((p) => p !== "WHATSAPP")
+                      .map((p) => (
+                        <SizeGuide
+                          key={p}
+                          name={PLATFORMS.find((x) => x.key === p)?.name}
+                          rules={getRules(p, "POST")}
+                        />
+                      ))}
+                  </div>
+                )}
+
+                <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {globalFiles.map((file, idx) => (
-                    <div key={idx} className="relative rounded-lg border border-slate-200 p-2 bg-slate-50">
-                      {file.type.startsWith("video/") ? (
-                        <video src={URL.createObjectURL(file)} className="h-24 w-full object-cover rounded" />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={URL.createObjectURL(file)} alt="Preview" className="h-24 w-full object-cover rounded" />
-                      )}
-                      <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full h-5 w-5 text-xs flex items-center justify-center">×</button>
-                    </div>
+                    <MediaThumb
+                      key={`${file.name}-${idx}`}
+                      file={file}
+                      ratio={globalRules.ratio}
+                      onRemove={() => removeFile(idx)}
+                    />
                   ))}
-                  {globalFiles.length === 0 && (
-                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 h-28 text-center text-xs text-slate-600 bg-slate-50 hover:border-indigo-400">
+                  {(globalRules.multiple ? globalFiles.length < globalRules.max : globalFiles.length === 0) && (
+                    <label className="flex h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-600 hover:border-indigo-400">
                       <span className="font-medium text-indigo-700">+ Add file</span>
-                      <input type="file" accept={TYPES.join(",")} onChange={(e) => handleFilesChange(e)} className="sr-only" />
+                      <input
+                        type="file"
+                        multiple={globalRules.multiple}
+                        accept={globalRules.types.join(",")}
+                        onChange={(e) => handleFilesChange(e)}
+                        className="sr-only"
+                      />
                     </label>
                   )}
                 </div>
@@ -538,36 +581,38 @@ export default function ComposerPage() {
                 const pInfo = PLATFORMS.find((p) => p.key === platKey);
                 const platFiles = customFiles[platKey];
                 const showFormatOptions = platKey === "INSTAGRAM" || platKey === "FACEBOOK";
-                const hasVideo = platFiles.some((f) => f.type.startsWith("video/"));
+                const fmt = formats[platKey];
+                const rules = getRules(platKey, fmt);
+                const canAddMore = rules.multiple ? platFiles.length < rules.max : platFiles.length === 0;
 
                 return (
-                  <div key={platKey} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm">
+                  <div key={platKey} className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: pInfo?.color }} />
                       {pInfo?.name} Customization
                     </div>
 
                     {showFormatOptions && (
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <label className="block text-xs font-semibold text-slate-700 mb-2">{pInfo?.name} Format:</label>
+                        <label className="mb-2 block text-xs font-semibold text-slate-700">
+                          {pInfo?.name} Format:
+                        </label>
                         <div className="flex gap-4">
-                          {(["POST", "REEL", "STORY"] as PostFormat[]).map((fmt) => {
-                            // Rule 1: જો ફોટો એડ કરેલો હોય તો Reel disable કરવી
-                            const isReelDisabled = fmt === "REEL" && platFiles.length > 0 && !hasVideo;
-                            return (
-                              <label key={fmt} className={`flex items-center gap-1.5 text-xs font-medium ${isReelDisabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
-                                <input
-                                  type="radio"
-                                  name={`format-${platKey}`}
-                                  disabled={isReelDisabled}
-                                  checked={formats[platKey] === fmt}
-                                  onChange={() => setFormats({ ...formats, [platKey]: fmt })}
-                                  className="text-indigo-600"
-                                />
-                                {fmt.charAt(0) + fmt.slice(1).toLowerCase()}
-                              </label>
-                            );
-                          })}
+                          {(["POST", "REEL", "STORY"] as PostFormat[]).map((f) => (
+                            <label
+                              key={f}
+                              className="flex cursor-pointer items-center gap-1.5 text-xs font-medium"
+                            >
+                              <input
+                                type="radio"
+                                name={`format-${platKey}`}
+                                checked={fmt === f}
+                                onChange={() => changeFormat(platKey, f)}
+                                className="text-indigo-600"
+                              />
+                              {f.charAt(0) + f.slice(1).toLowerCase()}
+                            </label>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -582,26 +627,42 @@ export default function ComposerPage() {
                       />
                     </div>
 
-                    <div>
-                      <p className="mb-1 text-xs font-medium text-slate-600">
-                        {pInfo?.name} Media {platKey === "FACEBOOK" ? "(Single image only)" : "(Multi-image / Carousel)"}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-slate-600">
+                        {pInfo?.name} Media
+                        {fmt === "REEL" ? " (Video)" : fmt === "STORY" ? " (Photo / Video)" : ""}
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+
+                      <SizeGuide rules={rules} />
+
+                      {notices[platKey] && (
+                        <p className="rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                          {notices[platKey]}
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {platFiles.map((file, idx) => (
-                          <div key={idx} className="relative rounded-lg border border-slate-200 p-1.5 bg-white">
-                            {file.type.startsWith("video/") ? (
-                              <video src={URL.createObjectURL(file)} className="h-20 w-full object-cover rounded" />
-                            ) : (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={URL.createObjectURL(file)} alt="Preview" className="h-20 w-full object-cover rounded" />
-                            )}
-                            <button type="button" onClick={() => removeFile(idx, platKey)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full h-4 w-4 text-[10px] flex items-center justify-center">×</button>
-                          </div>
+                          <MediaThumb
+                            key={`${file.name}-${idx}`}
+                            file={file}
+                            ratio={rules.ratio}
+                            heightClass="h-20"
+                            onRemove={() => removeFile(idx, platKey)}
+                          />
                         ))}
-                        {(platKey !== "FACEBOOK" || platFiles.length === 0) && (
-                          <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 h-24 text-center text-xs bg-white hover:border-indigo-400">
-                            <span className="text-indigo-700 font-medium">+ Add file</span>
-                            <input type="file" multiple={platKey !== "FACEBOOK"} accept={TYPES.join(",")} onChange={(e) => handleFilesChange(e, platKey, platKey === "FACEBOOK")} className="sr-only" />
+                        {canAddMore && (
+                          <label className="flex h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-center text-xs hover:border-indigo-400">
+                            <span className="font-medium text-indigo-700">
+                              {fmt === "REEL" ? "+ Add video" : "+ Add file"}
+                            </span>
+                            <input
+                              type="file"
+                              multiple={rules.multiple}
+                              accept={rules.types.join(",")}
+                              onChange={(e) => handleFilesChange(e, platKey)}
+                              className="sr-only"
+                            />
                           </label>
                         )}
                       </div>
@@ -614,12 +675,21 @@ export default function ComposerPage() {
 
           <div>
             <label htmlFor="when" className="mb-1 block text-sm font-medium">Schedule for</label>
-            <input id="when" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={field} />
+            <input
+              id="when"
+              type="datetime-local"
+              value={when}
+              onChange={(e) => setWhen(e.target.value)}
+              className={field}
+            />
           </div>
 
-          {error && <p className="text-sm text-red-700">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
 
-          <button disabled={busy} className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white">
+          <button
+            disabled={busy}
+            className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white disabled:opacity-60"
+          >
             {busy ? status || "Please wait" : "Schedule post"}
           </button>
         </form>
@@ -630,7 +700,7 @@ export default function ComposerPage() {
             customTexts={customTexts}
             isCustomized={isCustomized}
             platforms={selected}
-            mediaUrl={globalFiles[0] ? URL.createObjectURL(globalFiles[0]) : null}
+            mediaUrl={globalPreviewUrl}
             mediaType={globalFiles[0]?.type ?? null}
             customFiles={customFiles}
             formats={formats}
