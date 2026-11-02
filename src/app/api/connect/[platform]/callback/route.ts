@@ -510,6 +510,9 @@ async function handle(req: NextRequest, { params }: Ctx) {
     //     : null,
     // };
 
+
+
+    
     const data = {
   handle: String(channel.snippet?.title ?? externalId),
   accessToken: encrypt(token.access_token),
