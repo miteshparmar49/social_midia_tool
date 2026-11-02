@@ -233,8 +233,6 @@
 //   );
 // }
 
-
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -252,6 +250,8 @@ type Status = "scheduled" | "publishing" | "published" | "failed";
 interface Post {
   id: string;
   text: string;
+  // Platform-wise text, keys in lower case: { instagram: "...", facebook: "..." }
+  customTexts: Partial<Record<PlatformId, string>>;
   platforms: PlatformId[];
   when: string;
   status: Status;
@@ -329,6 +329,24 @@ const card = "rounded-xl border border-slate-200 bg-white";
 
 const INITIAL_POSTS_LIMIT = 5;
 
+// Platform-wise text lines for one post (only platforms that have their own text)
+function getTextLines(post: Post) {
+  return post.platforms
+    .map((id) => {
+      const platform = PLATFORMS.find((item) => item.id === id);
+      const full = (post.customTexts[id] ?? "").trim();
+
+      return {
+        id,
+        name: platform?.name ?? id,
+        color: platform?.color ?? "#64748b",
+        full,
+        short: full.split("\n").find((line) => line.trim()) ?? "",
+      };
+    })
+    .filter((line) => line.full);
+}
+
 export default function DashboardPage() {
   const [connected, setConnected] = useState<
     Record<PlatformId, string | null>
@@ -403,17 +421,33 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((rows: any[]) => {
         setPosts(
-          rows.map((p) => ({
-            id: p.id,
-            text: p.text,
-            platforms: p.platforms.map(
-              (platform: string) =>
-                platform.toLowerCase() as PlatformId
-            ),
-            when: new Date(p.scheduledAt).toLocaleString(),
-            status: p.status.toLowerCase() as Status,
-            error: p.error ?? null,
-          }))
+          rows.map((p) => {
+            // customTexts keys are upper case in the database (INSTAGRAM, FACEBOOK...)
+            const customTexts: Partial<Record<PlatformId, string>> = {};
+            const raw =
+              p.customTexts && typeof p.customTexts === "object"
+                ? (p.customTexts as Record<string, unknown>)
+                : {};
+
+            for (const [key, value] of Object.entries(raw)) {
+              if (typeof value === "string") {
+                customTexts[key.toLowerCase() as PlatformId] = value;
+              }
+            }
+
+            return {
+              id: p.id,
+              text: p.text,
+              customTexts,
+              platforms: p.platforms.map(
+                (platform: string) =>
+                  platform.toLowerCase() as PlatformId
+              ),
+              when: new Date(p.scheduledAt).toLocaleString(),
+              status: p.status.toLowerCase() as Status,
+              error: p.error ?? null,
+            };
+          })
         );
       })
       .catch(() => {});
@@ -645,66 +679,98 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 ) : (
-                  visiblePosts.map((post) => (
-                    <tr key={post.id}>
-                      <td className="max-w-xs px-4 py-3">
-                        <p
-                          className="truncate font-medium"
-                          title={post.text}
-                        >
-                          {post.text}
-                        </p>
+                  visiblePosts.map((post) => {
+                    const lines = getTextLines(post);
 
-                        {post.error && (
-                          <p
-                            className="truncate text-xs text-red-600"
-                            title={post.error}
+                    return (
+                      <tr key={post.id}>
+                        <td className="max-w-md px-4 py-3">
+                          {lines.length > 0 ? (
+                            // Platform-wise text (Customize for each network)
+                            <div className="space-y-1">
+                              {lines.map((line) => (
+                                <p
+                                  key={line.id}
+                                  className="flex items-center gap-2 text-xs"
+                                  title={`${line.name}: ${line.full}`}
+                                >
+                                  <span
+                                    className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-[9px] font-semibold text-white"
+                                    style={{
+                                      backgroundColor: line.color,
+                                    }}
+                                    aria-label={line.name}
+                                  >
+                                    {line.name[0]}
+                                  </span>
+
+                                  <span className="truncate font-medium text-slate-800">
+                                    {line.short}
+                                  </span>
+                                </p>
+                              ))}
+                            </div>
+                          ) : (
+                            // Same text for all platforms
+                            <p
+                              className="truncate font-medium"
+                              title={post.text}
+                            >
+                              {post.text}
+                            </p>
+                          )}
+
+                          {post.error && (
+                            <p
+                              className="mt-1 truncate text-xs text-red-600"
+                              title={post.error}
+                            >
+                              {post.error}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1.5">
+                            {post.platforms.map((id) => {
+                              const platform = PLATFORMS.find(
+                                (item) => item.id === id
+                              );
+
+                              if (!platform) return null;
+
+                              return (
+                                <span
+                                  key={id}
+                                  title={platform.name}
+                                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
+                                  style={{
+                                    backgroundColor: platform.color,
+                                  }}
+                                >
+                                  {platform.name[0]}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                          {post.when}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
+                              STATUS_STYLE[post.status] ?? ""
+                            }`}
                           >
-                            {post.error}
-                          </p>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1.5">
-                          {post.platforms.map((id) => {
-                            const platform = PLATFORMS.find(
-                              (item) => item.id === id
-                            );
-
-                            if (!platform) return null;
-
-                            return (
-                              <span
-                                key={id}
-                                title={platform.name}
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
-                                style={{
-                                  backgroundColor: platform.color,
-                                }}
-                              >
-                                {platform.name[0]}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {post.when}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
-                            STATUS_STYLE[post.status] ?? ""
-                          }`}
-                        >
-                          {post.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                            {post.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -743,4 +809,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
