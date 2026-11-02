@@ -144,7 +144,6 @@
 // }
 
 
-
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -210,12 +209,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid file" }, { status: 400 });
     }
 
+    // Customize મોડમાં main text ખાલી હોય છે, એટલે પહેલા platform નો text title તરીકે વાપરો
+    const firstCustomText =
+      data.platforms
+        .map((p) => data.customTexts?.[p]?.trim())
+        .find((t) => !!t) ?? "";
+
     const post = await prisma.post.create({
       data: {
         userId,
         platforms: data.platforms,
         scheduledAt: data.scheduledAt,
-        text: data.text || "",
+        text: data.text?.trim() || firstCustomText,
         mediaKeys: data.mediaKeys,
         mediaByPlatform: data.mediaByPlatform ?? undefined,
         formats: data.formats ?? {},
