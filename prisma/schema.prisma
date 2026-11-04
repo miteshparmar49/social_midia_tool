@@ -17,6 +17,7 @@ model User {
   plan          Plan            @default(FREE)
   posts         Post[]
   accounts      SocialAccount[]
+  aiUsage       AiUsage[]
 }
 
 model SocialAccount {
@@ -87,4 +88,13 @@ enum Plan {
 enum TokenType {
   VERIFY
   RESET
+}
+model AiUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

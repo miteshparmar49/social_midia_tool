@@ -713,6 +713,9 @@
 //   );
 // }
 
+
+
+
 "use client";
 
 import { useEffect, useMemo, useState, FormEvent, ChangeEvent } from "react";
@@ -860,6 +863,69 @@ function toLocalInput(d: Date) {
 // ---------------------------------------------------------------
 // Small components
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// AI options
+// ---------------------------------------------------------------
+const AI_TONES = ["Professional", "Friendly", "Festive", "Persuasive", "Funny"];
+const AI_LANGUAGES = [
+  { value: "English", label: "English" },
+  { value: "Gujarati", label: "ગુજરાતી" },
+  { value: "Hindi", label: "हिन्दी" },
+];
+const AI_LENGTHS = ["Short", "Medium", "Long"];
+
+const REFINE_ACTIONS = [
+  { id: "shorter", label: "Shorter" },
+  { id: "longer", label: "Longer" },
+  { id: "grammar", label: "Fix grammar" },
+  { id: "catchy", label: "More catchy" },
+  { id: "emojis", label: "Add emojis" },
+  { id: "hashtags", label: "Add hashtags" },
+  { id: "translate_gu", label: "→ ગુજરાતી" },
+  { id: "translate_en", label: "→ English" },
+  { id: "translate_hi", label: "→ हिन्दी" },
+];
+
+function Spinner({ className = "h-3 w-3" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Small buttons under a text box: shorter, longer, fix grammar, translate...
+function RefineBar({
+  prefix,
+  busyKey,
+  disabled,
+  onAction,
+}: {
+  prefix: string;
+  busyKey: string | null;
+  disabled: boolean;
+  onAction: (action: string) => void;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] font-medium text-violet-700">✨ AI:</span>
+      {REFINE_ACTIONS.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          disabled={disabled}
+          onClick={() => onAction(a.id)}
+          className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busyKey === `${prefix}:${a.id}` && <Spinner />}
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SizeGuide({ name, rules }: { name?: string; rules: Rules }) {
   return (
     <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-2.5 text-xs text-slate-700 space-y-0.5">
@@ -982,6 +1048,27 @@ export default function ComposerPage() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // AI writer
+  const [aiIdea, setAiIdea] = useState("");
+  const [aiTone, setAiTone] = useState("Professional");
+  const [aiLang, setAiLang] = useState("English");
+  const [aiLength, setAiLength] = useState("Medium");
+  const [aiBusy, setAiBusy] = useState<string | null>(null); // "generate" or "<platform|global>:<action>"
+  const [aiError, setAiError] = useState("");
+  const [aiUsage, setAiUsage] = useState<{ used: number; limit: number; plan: string } | null>(null);
+  const [aiLimitHit, setAiLimitHit] = useState(false);
+  const aiLocked = !!aiUsage && aiUsage.used >= aiUsage.limit;
+
+  // How many AI uses are left this month
+  useEffect(() => {
+    fetch("/api/ai/generate")
+      .then((r) => r.json())
+      .then((u) => {
+        if (typeof u?.limit === "number") setAiUsage(u);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const fallback = new Date(Date.now() + 60 * 60 * 1000);
     const q = new URLSearchParams(window.location.search).get("date");
@@ -1094,6 +1181,100 @@ export default function ComposerPage() {
       }));
     } else {
       setGlobalFiles((prev) => prev.filter((_, i) => i !== index));
+    }
+  }
+
+  async function callAI(payload: Record<string, unknown>) {
+    const res = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (data?.usage) setAiUsage(data.usage);
+
+    if (!res.ok) {
+      if (data?.code === "LIMIT") setAiLimitHit(true);
+      throw new Error(data?.error ?? "AI request failed. Please try again.");
+    }
+
+    setAiLimitHit(false);
+    return data;
+  }
+
+  // Write a separate post for every ticked platform
+  async function generateWithAI() {
+    setAiError("");
+
+    if (aiIdea.trim().length < 3) return setAiError("Write your post idea first");
+    if (!selected.length) return setAiError("Tick at least one platform first");
+
+    setAiBusy("generate");
+
+    try {
+      const data = await callAI({
+        mode: "generate",
+        idea: aiIdea.trim(),
+        platforms: selected,
+        tone: aiTone,
+        language: aiLang,
+        length: aiLength,
+      });
+
+      const texts = (data.texts ?? {}) as Record<string, string>;
+
+      if (selected.length === 1 && !isCustomized) {
+        // One platform and no customization: use the normal text box
+        setText(texts[selected[0]] ?? "");
+      } else {
+        // Several platforms: switch on "Customize for each network" and fill each box
+        setIsCustomized(true);
+        setCustomTexts((prev) => {
+          const next = { ...prev };
+          for (const p of selected) {
+            if (texts[p]) next[p] = texts[p];
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI request failed. Please try again.");
+    } finally {
+      setAiBusy(null);
+    }
+  }
+
+  // Improve the text in one box (shorter, longer, grammar, translate...)
+  async function refineText(action: string, target: PlatformKey | "global") {
+    setAiError("");
+
+    const current = target === "global" ? text : customTexts[target];
+
+    if (!current.trim()) return setAiError("Write some text first, then use the AI buttons");
+
+    setAiBusy(`${target}:${action}`);
+
+    try {
+      const data = await callAI({
+        mode: "refine",
+        action,
+        text: current,
+        platform: target === "global" ? undefined : target,
+      });
+
+      const out = String(data.text ?? "");
+
+      if (target === "global") {
+        setText(out);
+      } else {
+        setCustomTexts((prev) => ({ ...prev, [target]: out }));
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI request failed. Please try again.");
+    } finally {
+      setAiBusy(null);
     }
   }
 
@@ -1241,6 +1422,98 @@ export default function ComposerPage() {
             </label>
           </div>
 
+          {/* Write with AI */}
+          <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 via-indigo-50 to-fuchsia-50 p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-violet-800">
+                <span aria-hidden="true">✨</span> Write with AI
+              </p>
+              <span className="text-[11px] text-slate-500">Writes a separate post for each ticked platform</span>
+            </div>
+
+            <textarea
+              rows={2}
+              maxLength={1000}
+              value={aiIdea}
+              onChange={(e) => setAiIdea(e.target.value)}
+              className={field}
+              placeholder="What is your post about? e.g. Navratri wishes from MVP InfoTech, or our Shopify development service"
+            />
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <label className="text-xs font-medium text-slate-600">
+                Tone
+                <select
+                  value={aiTone}
+                  onChange={(e) => setAiTone(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {AI_TONES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs font-medium text-slate-600">
+                Language
+                <select
+                  value={aiLang}
+                  onChange={(e) => setAiLang(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {AI_LANGUAGES.map((l) => (
+                    <option key={l.value} value={l.value}>{l.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs font-medium text-slate-600">
+                Length
+                <select
+                  value={aiLength}
+                  onChange={(e) => setAiLength(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {AI_LENGTHS.map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {aiError && (
+              <p role="alert" className="mt-2 text-xs text-red-700">
+                {aiError}{" "}
+                {aiLimitHit && (
+                  <a href="/plans" className="font-semibold underline">
+                    View plans
+                  </a>
+                )}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={generateWithAI}
+              disabled={aiBusy !== null || busy || aiLocked}
+              className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {aiBusy === "generate" && <Spinner className="h-4 w-4" />}
+              {aiBusy === "generate" ? "Writing your posts..." : "✨ Generate posts"}
+            </button>
+
+            {aiUsage && (
+              <p className={`mt-2 text-xs font-medium ${aiLocked ? "text-red-700" : "text-violet-700"}`}>
+                {Math.max(aiUsage.limit - aiUsage.used, 0)} of {aiUsage.limit} AI uses left this month (
+                {aiUsage.plan.charAt(0) + aiUsage.plan.slice(1).toLowerCase()} plan)
+              </p>
+            )}
+
+            <p className="mt-1 text-[11px] text-slate-500">
+              AI can make mistakes. Please read and edit the text before you schedule.
+            </p>
+          </div>
+
           {!isCustomized ? (
             <>
               <div>
@@ -1253,6 +1526,12 @@ export default function ComposerPage() {
                   onChange={(e) => setText(e.target.value)}
                   className={field}
                   placeholder="What do you want to share?"
+                />
+                <RefineBar
+                  prefix="global"
+                  busyKey={aiBusy}
+                  disabled={aiBusy !== null || busy || aiLocked}
+                  onAction={(a) => refineText(a, "global")}
                 />
               </div>
 
@@ -1346,6 +1625,12 @@ export default function ComposerPage() {
                         onChange={(e) => setCustomTexts({ ...customTexts, [platKey]: e.target.value })}
                         className={field}
                         placeholder={`Write post specifically for ${pInfo?.name}...`}
+                      />
+                      <RefineBar
+                        prefix={platKey}
+                        busyKey={aiBusy}
+                        disabled={aiBusy !== null || busy || aiLocked}
+                        onAction={(a) => refineText(a, platKey)}
                       />
                     </div>
 
