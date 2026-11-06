@@ -16,7 +16,7 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 // Change these numbers any time.
 // ---------------------------------------------------------------
 const AI_LIMITS: Record<string, number> = {
-  FREE: 20,
+  FREE: 11,
   PRO: 300,
   BUSINESS: 1500,
 };
